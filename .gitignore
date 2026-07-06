@@ -1,0 +1,17 @@
+DerivedData/
+.build/
+build/
+dist/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+logs/
+*.log
+.env
+.env.*
+*.pid
+*.xcarchive
+*.ipa
+*.dSYM
+*.dSYM.zip
+.DS_Store
