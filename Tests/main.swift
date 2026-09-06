@@ -7,6 +7,7 @@ final class TestState: @unchecked Sendable {
     let lock = NSLock()
     var checks = 0
     var cleanup: @Sendable () -> Void = {}
+    var diagnostics: @Sendable () -> String = { "" }
     func record() { lock.withLock { checks += 1 } }
 }
 final class ResponseBox: @unchecked Sendable {
@@ -16,7 +17,7 @@ final class ResponseBox: @unchecked Sendable {
 }
 let testState = TestState()
 func check(_ condition: @autoclosure () -> Bool, _ message: String) {
-    guard condition() else { fputs("FAIL: \(message)\n", stderr); testState.cleanup(); exit(1) }
+    guard condition() else { fputs("FAIL: \(message)\n\(testState.diagnostics())\n", stderr); testState.cleanup(); exit(1) }
     testState.record()
 }
 func awaitCondition(_ message: String, _ predicate: () -> Bool) {
@@ -139,6 +140,7 @@ let secondID = "fixture-vision"
 let second = ModelSpec(id: secondID, backend: .mlxVLM, capabilities: ["responses", "text"], localPath: modelRoot.path)
 let backend = BackendManager(pythonExecutable: root.appendingPathComponent("Tests/backend_fixture.py").path,
                              logURL: temporary.appendingPathComponent("backend.log"))
+testState.diagnostics = { "Backend: \(backend.status)\n\(backend.readLogTail())" }
 let gatewayPort: UInt16 = 44219
 let modelPort: UInt16 = 44220
 try LocalEndpoint.checkAvailable(host: "127.0.0.1", port: gatewayPort)
