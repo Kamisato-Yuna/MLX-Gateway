@@ -44,8 +44,12 @@
 
 Release 构建通过。产物为 `MLXGateway-0.2.0-macos-arm64.zip`，包内版本 0.2.0、build 2；使用 Developer ID Application / Team `852H844JG2` 签名，启用 Hardened Runtime 和安全时间戳，arm64 与严格嵌套签名检查通过。
 
+包含公证配置修复的提交 `fcefdfc` 已通过 [GitHub CI](https://github.com/Kamisato-Yuna/MLX-Gateway/actions/runs/34040806493)：协议、客户端与更新测试、Release 编译全部成功。后续发布记录与站点文案不改变应用源码或构建配置。
+
 更新测试通过真实 DEFLATE 大小篡改、下载与实际展开限额、路径穿越／链接／特殊文件、取消竞态、AppleDouble 属性恢复，以及替换／启动／恢复失败路径。
 
-在独立临时目录构造同团队签名的 0.1.0 应用副本，实际运行签名客户端的更新 helper。收到 `READY` 后让旧进程正常退出，helper 返回 0，包内版本变为 0.2.0；新版进程确实重启、严格签名通过，`/status` 正常且模型保持停止。演练没有替换用户安装的应用。测试脚本最初未归一化 `/var` 与 `/private/var`，误报未启动；依据实际进程路径修正后通过。
+在独立临时目录用当前构建生成版本号为 0.1.0、同团队重新签名的测试副本，实际运行其更新 helper；这不是历史 0.1.0 源码构建。收到 `READY` 后让旧进程正常退出，helper 返回 0，包内版本变为 0.2.0；新版进程确实重启、严格签名通过，初轮演练的 `/status` 正常且模型保持停止。演练没有替换用户安装的应用。测试脚本最初未归一化 `/var` 与 `/private/var`，误报未启动；依据实际进程路径修正后通过。
 
-Apple 公证与 Gatekeeper 分发验收尚未完成；当前安装包仅已完成 Developer ID 签名。正式分发状态以对应 Release 说明为准。桌面锁屏期间只完成命令行安装与进程验证，没有把它记为更新按钮的 GUI 点击验收。
+Apple 公证已通过（提交 `a94355f5-beb4-46e7-a3af-491176ca2257`，状态 `Accepted`）。首次提交发现 Xcode 给 Release 注入 `get-task-allow`；Release 配置已关闭基础调试权限注入，重新构建并确认不包含该权限后通过公证。应用已附加票据，`stapler validate`、严格嵌套签名和 Gatekeeper 检查均通过，评估来源为 `Notarized Developer ID`；最终 ZIP 在附加票据后重新生成。
+
+使用最终公证 ZIP 再次完成隔离更新，helper 返回 0，新版进程实际重启。安装后的应用仍通过 `stapler validate` 和 Gatekeeper，确认安全解压与替换保留公证票据。桌面锁屏期间完成了命令行安装与进程验证，没有把它记为更新按钮的 GUI 点击验收。
