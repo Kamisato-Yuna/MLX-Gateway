@@ -1,0 +1,17 @@
+name: 改进建议 / Feature request
+description: 提出使用场景与体验改进
+labels: [enhancement]
+body:
+  - type: textarea
+    id: scenario
+    attributes:
+      label: 使用场景与当前困难
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议的行为
+      description: 描述用户如何操作，以及解决后的效果。
+    validations:
+      required: true

@@ -15,3 +15,16 @@ logs/
 *.dSYM
 *.dSYM.zip
 .DS_Store
+
+# Local MLX environments, model weights and credentials
+.venv/
+venv/
+models/
+.cache/
+*.safetensors
+*.gguf
+*.pem
+*.p12
+*.key
+__pycache__/
+*.pyc

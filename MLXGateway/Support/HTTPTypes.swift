@@ -1,13 +1,14 @@
 import Foundation
+import Darwin
 
-struct HTTPRequest {
+struct HTTPRequest: Sendable {
     let method: String
     let path: String
     let headers: [String: String]
     let body: Data
 }
 
-struct HTTPResponse {
+struct HTTPResponse: Sendable {
     let statusCode: Int
     let reason: String
     let headers: [String: String]
@@ -66,6 +67,8 @@ struct HTTPResponse {
             return "OK"
         case 400:
             return "Bad Request"
+        case 409:
+            return "Conflict"
         case 404:
             return "Not Found"
         case 502:
@@ -118,5 +121,37 @@ enum HTTPParser {
             headers: headers,
             body: Data(body)
         )
+    }
+}
+
+/// Numeric local bind addresses keep the configured listener and child URL consistent.
+enum LocalEndpoint {
+    static func url(host: String, port: UInt16) -> URL? {
+        var parts = URLComponents()
+        parts.scheme = "http"
+        let connectHost = host == "0.0.0.0" ? "127.0.0.1" : (host == "::" ? "::1" : host)
+        parts.host = connectHost.contains(":") ? "[\(connectHost)]" : connectHost
+        parts.port = Int(port)
+        return parts.url
+    }
+
+    static func checkAvailable(host: String, port: UInt16) throws {
+        var hints = addrinfo()
+        hints.ai_flags = AI_NUMERICHOST
+        hints.ai_socktype = SOCK_STREAM
+        var result: UnsafeMutablePointer<addrinfo>?
+        let resolvedHost = host == "localhost" ? "127.0.0.1" : host
+        guard getaddrinfo(resolvedHost, String(port), &hints, &result) == 0, let info = result else {
+            throw BackendError.message("主机地址需要填写本机 IPv4 / IPv6 地址或 localhost。")
+        }
+        defer { freeaddrinfo(info) }
+        let fd = socket(info.pointee.ai_family, SOCK_STREAM, 0)
+        guard fd >= 0 else { throw BackendError.message("无法创建服务端口。") }
+        defer { close(fd) }
+        var reuse: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout.size(ofValue: reuse)))
+        guard bind(fd, info.pointee.ai_addr, info.pointee.ai_addrlen) == 0 else {
+            throw BackendError.message("地址 \(host):\(port) 不可用或已被其他进程占用。")
+        }
     }
 }

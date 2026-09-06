@@ -1,0 +1,45 @@
+{
+  "features" : [
+    "refractivity"
+  ],
+  "fill" : {
+    "automatic-gradient" : "extended-srgb:0.00000,0.53333,1.00000,1.00000"
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "image-name" : "Gateway-Portal.svg",
+          "name" : "Gateway-Portal"
+        },
+        {
+          "image-name" : "Model-Core.svg",
+          "name" : "Model-Core"
+        },
+        {
+          "image-name" : "Response-Flow.svg",
+          "name" : "Response-Flow"
+        }
+      ],
+      "name" : "Local intelligence, one gateway",
+      "refractivity" : {
+        "depth" : 0,
+        "enabled" : true,
+        "strength" : 0.5
+      },
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.3
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : [
+      "macOS"
+    ]
+  }
+}

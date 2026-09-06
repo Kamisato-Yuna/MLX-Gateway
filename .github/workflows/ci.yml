@@ -1,0 +1,34 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  swift6:
+    name: Swift 6 tests and macOS build
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select runner Xcode
+        run: echo "DEVELOPER_DIR=$(xcode-select -p)" >> "$GITHUB_ENV"
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          xcrun swift --version
+          test "$(uname -m)" = arm64
+      - name: Swift 6 model discovery and service tests
+        run: ./script/test.sh
+      - name: Compile application and Icon Composer resources
+        run: |
+          xcodebuild -project MLXGateway.xcodeproj -scheme MLXGateway \
+            -configuration Release -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath build/CI ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
+            CODE_SIGNING_ALLOWED=NO build
+      # CI only compiles; it never publishes an unsigned application or runs real models.

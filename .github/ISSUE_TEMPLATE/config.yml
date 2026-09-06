@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 使用交流 / Discussions
+    url: https://github.com/Kamisato-Yuna/MLX-Gateway/discussions
+    about: 使用问题与想法交流
+  - name: 私密安全报告
+    url: https://github.com/Kamisato-Yuna/MLX-Gateway/security/advisories/new
+    about: 请勿公开敏感数据或漏洞复现中的凭据

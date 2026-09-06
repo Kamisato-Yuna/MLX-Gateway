@@ -1,0 +1,23 @@
+name: 问题反馈 / Bug report
+description: 报告可复现的界面、模型扫描或运行问题
+labels: [bug]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 问题与复现步骤
+      description: 说明预期行为和实际行为，界面问题可附截图。
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境
+      description: macOS、芯片/内存、Xcode、提交或版本、Python/MLX 版本以及模型类型。无需提供个人绝对路径。
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 脱敏日志或错误
+      description: 不要上传提示词、个人路径、凭据或模型权重。

@@ -15,6 +15,8 @@
 		A00000000000000000000016 /* GatewayController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000006 /* GatewayController.swift */; };
 		A00000000000000000000017 /* HTTPTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000007 /* HTTPTypes.swift */; };
 		A00000000000000000000018 /* JSONSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000008 /* JSONSupport.swift */; };
+		A00000000000000000000019 /* ResponsesAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000010 /* ResponsesAdapter.swift */; };
+		A0000000000000000000001A /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000001B /* AppIcon.icon */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,6 +30,8 @@
 		A00000000000000000000008 /* JSONSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONSupport.swift; sourceTree = "<group>"; };
 		A00000000000000000000009 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A00000000000000000000020 /* MLXGateway.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MLXGateway.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A00000000000000000000010 /* ResponsesAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResponsesAdapter.swift; sourceTree = "<group>"; };
+		A0000000000000000000001B /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.icon; path = Resources/Branding/AppIcon.icon; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -43,27 +47,7 @@
 		};
 /* End PBXFrameworksBuildPhase section */
 
-/* Begin PBXShellScriptBuildPhase section */
-		A00000000000000000000031 /* Sign Debug App */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Sign Debug App";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "if [ \"$CONFIGURATION\" = \"Debug\" ]; then\n  /usr/bin/codesign --force --sign \"Apple Development: Yuna Kamisato (RHMMQ36XSM)\" \"$TARGET_BUILD_DIR/$WRAPPER_NAME\"\nfi\n";
-		};
-/* End PBXShellScriptBuildPhase section */
+
 
 /* Begin PBXGroup section */
 		A00000000000000000000040 = {
@@ -83,6 +67,7 @@
 				A00000000000000000000045 /* Views */,
 				A00000000000000000000046 /* Support */,
 				A00000000000000000000009 /* Info.plist */,
+				A0000000000000000000001B /* AppIcon.icon */,
 			);
 			path = MLXGateway;
 			sourceTree = "<group>";
@@ -126,6 +111,7 @@
 			children = (
 				A00000000000000000000007 /* HTTPTypes.swift */,
 				A00000000000000000000008 /* JSONSupport.swift */,
+				A00000000000000000000010 /* ResponsesAdapter.swift */,
 			);
 			path = Support;
 			sourceTree = "<group>";
@@ -147,7 +133,7 @@
 			buildPhases = (
 				A00000000000000000000070 /* Sources */,
 				A00000000000000000000030 /* Frameworks */,
-				A00000000000000000000031 /* Sign Debug App */,
+				A00000000000000000000071 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -192,6 +178,15 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXResourcesBuildPhase section */
+        A00000000000000000000071 /* Resources */ = {
+            isa = PBXResourcesBuildPhase;
+            buildActionMask = 2147483647;
+            files = (A0000000000000000000001A /* AppIcon.icon in Resources */,);
+            runOnlyForDeploymentPostprocessing = 0;
+        };
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		A00000000000000000000070 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -205,6 +200,7 @@
 				A00000000000000000000016 /* GatewayController.swift in Sources */,
 				A00000000000000000000017 /* HTTPTypes.swift in Sources */,
 				A00000000000000000000018 /* JSONSupport.swift in Sources */,
+				A00000000000000000000019 /* ResponsesAdapter.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -332,14 +328,14 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ARCHS = arm64;
-				ASSETCATALOG_COMPILER_APPICON_NAME = "";
-				CODE_SIGN_IDENTITY = "Apple Development";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
-				CODE_SIGNING_ALLOWED = NO;
-				CODE_SIGNING_REQUIRED = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "Apple Development: Yuna Kamisato (RHMMQ36XSM)";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development: Yuna Kamisato (RHMMQ36XSM)";
+				CODE_SIGNING_ALLOWED = YES;
+				CODE_SIGNING_REQUIRED = YES;
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = RHMMQ36XSM;
+				DEVELOPMENT_TEAM = 852H844JG2;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -356,7 +352,7 @@
 				SUPPORTED_PLATFORMS = macosx;
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
 		};
@@ -364,14 +360,14 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ARCHS = arm64;
-				ASSETCATALOG_COMPILER_APPICON_NAME = "";
-				CODE_SIGN_IDENTITY = "Apple Development";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "Apple Development: Yuna Kamisato (RHMMQ36XSM)";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development: Yuna Kamisato (RHMMQ36XSM)";
 				CODE_SIGNING_ALLOWED = NO;
 				CODE_SIGNING_REQUIRED = NO;
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
-				DEVELOPMENT_TEAM = RHMMQ36XSM;
+				DEVELOPMENT_TEAM = 852H844JG2;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -388,7 +384,7 @@
 				SUPPORTED_PLATFORMS = macosx;
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Release;
 		};
