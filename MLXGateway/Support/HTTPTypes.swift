@@ -69,6 +69,10 @@ struct HTTPResponse: Sendable {
             return "Bad Request"
         case 409:
             return "Conflict"
+        case 413:
+            return "Payload Too Large"
+        case 429:
+            return "Too Many Requests"
         case 404:
             return "Not Found"
         case 502:

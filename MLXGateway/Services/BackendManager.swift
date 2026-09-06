@@ -36,6 +36,7 @@ final class BackendManager: @unchecked Sendable {
     private var outputHandle: FileHandle?
     private var readinessTask: URLSessionDataTask?
     private var requests: [Int: URLSessionDataTask] = [:]
+    private var streams: [UUID: BackendRequestCancellation] = [:]
     private var endpoint: URL?
     private var activeModel: ModelSpec?
     private var pythonExecutable: String
@@ -75,8 +76,9 @@ final class BackendManager: @unchecked Sendable {
                 if !FileManager.default.fileExists(atPath: logURL.path) {
                     FileManager.default.createFile(atPath: logURL.path, contents: nil)
                 }
-                let handle = try FileHandle(forWritingTo: logURL)
-                try handle.seekToEnd()
+                let fd = Darwin.open(logURL.path, O_WRONLY | O_CREAT | O_APPEND, S_IRUSR | S_IWUSR)
+                guard fd >= 0 else { throw BackendError.message("无法打开本地服务日志。") }
+                let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
                 outputHandle = handle
                 log("启动 \(model.id) · \(model.backend.rawValue)")
                 let child = Process()
@@ -118,6 +120,8 @@ final class BackendManager: @unchecked Sendable {
     private func stopLocked() {
         readinessTask?.cancel()
         readinessTask = nil
+        streams.values.forEach { $0.cancel() }
+        streams.removeAll()
         requests.values.forEach { $0.cancel() }
         requests.removeAll()
         if let child = process {
@@ -146,6 +150,8 @@ final class BackendManager: @unchecked Sendable {
     private func didExit(_ child: Process) {
         guard process === child else { return }
         readinessTask?.cancel()
+        streams.values.forEach { $0.cancel() }
+        streams.removeAll()
         requests.values.forEach { $0.cancel() }
         requests.removeAll()
         log("MLX 服务退出，退出码 \(child.terminationStatus)")
@@ -188,7 +194,9 @@ final class BackendManager: @unchecked Sendable {
         readinessTask?.resume()
     }
 
-    func complete(modelID: String, chatData: Data, completion: @escaping @Sendable (HTTPResponse) -> Void) {
+    @discardableResult
+    func complete(modelID: String, chatData: Data, completion: @escaping @Sendable (HTTPResponse) -> Void) -> BackendRequestCancellation {
+        let cancellation = BackendRequestCancellation()
         queue.async { [self] in
             guard let child = process, child.isRunning, status.state == .ready,
                   let model = activeModel, let endpoint else {
@@ -229,7 +237,61 @@ final class BackendManager: @unchecked Sendable {
                 }
             }
             requests[task.taskIdentifier] = task
+            cancellation.install { task.cancel() }
             task.resume()
+        }
+        return cancellation
+    }
+
+    @discardableResult
+    func stream(modelID: String, chatData: Data, bytes: @escaping @Sendable (Data) -> Void,
+                completion: @escaping @Sendable (HTTPResponse?) -> Void) -> BackendRequestCancellation {
+        let cancellation = BackendRequestCancellation()
+        queue.async { [self] in
+            guard let child = process, child.isRunning, status.state == .ready,
+                  let model = activeModel, let endpoint else {
+                completion(.error(statusCode: 503, message: "Start a model in MLX Gateway and wait until it is ready.", code: "backend_not_ready")); return
+            }
+            guard model.id == modelID else {
+                completion(.error(statusCode: 409, message: "Select and start the requested model in MLX Gateway.", code: "model_not_active")); return
+            }
+            var body = JSONSupport.object(from: chatData) ?? [:]
+            body["model"] = model.localPath
+            var request = URLRequest(url: endpoint.appendingPathComponent("v1/chat/completions"))
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+            request.httpBody = JSONSupport.data(from: body)
+            request.timeoutInterval = 120
+            let id = UUID()
+            streams[id] = cancellation
+            let transfer = BackendStream(bytes: bytes) { [weak self] failure in
+                guard let self else { return }
+                self.queue.async {
+                    self.streams.removeValue(forKey: id)
+                    if self.process !== child || !child.isRunning {
+                        completion(.error(statusCode: 503, message: "The MLX service stopped during this request.", code: "backend_stopped"))
+                    } else { completion(failure) }
+                }
+            }
+            transfer.start(request, cancellation: cancellation)
+        }
+        return cancellation
+    }
+
+    /// Truncate the existing inode. The child and gateway share an O_APPEND descriptor,
+    /// so subsequent writes cannot leave a sparse hole after truncation.
+    func clearLogs(completion: @escaping @Sendable (Result<Void, Error>) -> Void) {
+        queue.async { [self] in
+            do {
+                if let handle = outputHandle { try handle.truncate(atOffset: 0) }
+                else if FileManager.default.fileExists(atPath: logURL.path) {
+                    let handle = try FileHandle(forWritingTo: logURL)
+                    defer { try? handle.close() }
+                    try handle.truncate(atOffset: 0)
+                }
+                completion(.success(()))
+            } catch { completion(.failure(BackendError.message("无法清空本地服务日志，请检查文件权限。"))) }
         }
     }
 

@@ -20,6 +20,10 @@ logs/
 .venv/
 venv/
 models/
+# The Swift Models source directory shares this name on case-insensitive macOS.
+!MLXGateway/Models/
+MLXGateway/Models/*
+!MLXGateway/Models/*.swift
 .cache/
 *.safetensors
 *.gguf

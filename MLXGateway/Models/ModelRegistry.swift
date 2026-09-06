@@ -41,10 +41,13 @@ struct ModelSpec: Identifiable, Equatable, Sendable {
     let capabilities: Set<String>
     let localPath: String
     var displayName: String { URL(fileURLWithPath: localPath).lastPathComponent }
-    var subtitle: String { backend == .mlxVLM ? "视觉模型 · 当前开放文本" : "文本模型 · MLX" }
+    var subtitle: String { backend == .mlxVLM ? "视觉模型 · 文本与图片" : "文本模型 · MLX" }
     var publicDescription: [String: Any] {
         ["id": id, "object": "model", "created": 0, "owned_by": "local",
-         "capabilities": Array(capabilities).sorted(), "backend": backend.rawValue]
+         "capabilities": Array(capabilities).sorted(), "backend": backend.rawValue,
+         "limitations": ["function strict=false; requires recognized tokenizer parser",
+                         backend == .mlxVLM ? "JSON requires llguidance; images use detail=auto" : "No image/PDF input or constrained JSON",
+                         "Responses are retained in gateway process memory; restart clears history"]]
     }
 }
 
@@ -76,8 +79,11 @@ struct ModelRegistry: Sendable {
                 let vision = object["vision_config"] is [String: Any] || object["vision_tower"] is String
                     || object["image_token_index"] != nil || type.contains("vl") || type.contains("vision")
                 let id = relative.isEmpty ? directory.lastPathComponent : relative
+                var capabilities: Set<String> = ["responses", "text", "text_file_input", "streaming", "response_storage", "previous_response_id", "background", "cancel"]
+                if vision { capabilities.formUnion(["image_input", "pdf_input", "structured_output"]) }
+                if Self.hasToolParser(at: directory, vision: vision) { capabilities.insert("tools") }
                 found.append(ModelSpec(id: id, backend: vision ? .mlxVLM : .mlxLM,
-                                       capabilities: ["responses", "text"], localPath: directory.path))
+                                       capabilities: capabilities, localPath: directory.path))
                 return
             }
             guard depth < 5 else { return }
@@ -93,6 +99,25 @@ struct ModelRegistry: Sendable {
         if failures > 0 { scanMessage = "部分目录无法读取，请检查模型目录与访问权限。" }
         else if invalid > 0 { scanMessage = "已跳过 \(invalid) 个无效 config.json；需要有效的 model_type。" }
         else { scanMessage = nil }
+    }
+
+    /// Mirrors the installed MLX tokenizer parser markers without loading weights.
+    /// Unknown templates remain text-only instead of letting MLX silently ignore tools.
+    private static func hasToolParser(at directory: URL, vision: Bool) -> Bool {
+        let config = (try? Data(contentsOf: directory.appendingPathComponent("tokenizer_config.json")))
+            .flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] } ?? [:]
+        let jinja = try? String(contentsOf: directory.appendingPathComponent("chat_template.jinja"), encoding: .utf8)
+        let template = jinja ?? config["chat_template"] as? String ?? ""
+        let knownParsers: Set<String> = ["minimax_m2", "gemma4", "function_gemma", "longcat", "glm47", "pythonic", "qwen3_coder", "kimi_k2", "mistral", "json_tools"]
+        if !vision, let parser = config["tool_parser_type"] as? String, knownParsers.contains(parser) { return true }
+        let groups = [["<minimax:tool_call>"], ["<|tool_call>", "<tool_call|>"], ["<start_function_call>"],
+                      ["<longcat_tool_call>"], ["<arg_key>"], ["<|tool_list_start|>"],
+                      ["<tool_call>\\n<function="], ["<tool_call>\n<function="],
+                      ["<|tool_calls_section_begin|>"], ["[TOOL_CALLS]"], ["<tool_call>", "tool_call.name"]]
+        if groups.contains(where: { group in group.allSatisfy { template.contains($0) } }) { return true }
+        let visionGroups = [["<atem:function_calls>", "<atem:invoke"], ["<|tool_call>"], ["<|START_ACTION|>"],
+                            ["]<]minimax[>[<tool_call>"], ["<mm:think>"], ["<|tool_call_start|>", "<|tool_call_end|>"]]
+        return vision && visionGroups.contains(where: { group in group.allSatisfy { template.contains($0) } })
     }
 
     func model(id: String?) -> ModelSpec? {

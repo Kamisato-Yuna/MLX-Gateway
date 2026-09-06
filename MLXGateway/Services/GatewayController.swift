@@ -18,6 +18,9 @@ final class GatewayController: ObservableObject {
     @Published private(set) var gatewayError: String?
     @Published private(set) var backend = BackendStatus()
     @Published private(set) var logs = ""
+    @Published private(set) var clearingLogs = false
+    @Published private(set) var logError: String?
+    @Published private(set) var logNotice: String?
     @Published var followLogs = true
     @Published var settingsError: String?
     @Published private(set) var activeBaseURL = ""
@@ -28,9 +31,12 @@ final class GatewayController: ObservableObject {
     @Published private(set) var runtimeIssue: String?
 
     let backendManager: BackendManager
+    let performance = PerformanceMonitor()
+    let benchmark = ModelBenchmarkRunner()
     private var server: GatewayServer!
     private var timer: Timer?
     private var readingLogs = false
+    private var logReadTask: Task<Void, Never>?
     private var terminationObserver: NSObjectProtocol?
     private var copyTask: Task<Void, Never>?
     private var appliedGatewayHost = ""
@@ -72,6 +78,9 @@ final class GatewayController: ObservableObject {
         terminationObserver = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.timer?.invalidate()
+                self?.benchmark.cancel()
+                self?.performance.stop()
+                self?.logReadTask?.cancel()
                 self?.server.stop()
                 self?.backendManager.shutdown()
             }
@@ -211,13 +220,34 @@ final class GatewayController: ObservableObject {
 
     private func refresh() {
         backend = backendManager.status
-        guard !readingLogs else { return }
+        performance.refresh(pid: backend.pid, modelID: backend.modelID)
+        guard !readingLogs, !clearingLogs else { return }
         readingLogs = true
         let manager = backendManager
-        Task {
+        logReadTask = Task {
             let tail = await Task.detached(priority: .utility) { manager.readLogTail() }.value
-            if logs != tail { logs = tail }
+            if !Task.isCancelled, logs != tail { logs = tail }
             readingLogs = false
+        }
+    }
+
+    func clearLogs() {
+        guard !clearingLogs else { return }
+        clearingLogs = true
+        logReadTask?.cancel()
+        logError = nil
+        logNotice = nil
+        backendManager.clearLogs { [weak self] result in
+            Task { @MainActor in
+                guard let self else { return }
+                self.clearingLogs = false
+                switch result {
+                case .success:
+                    self.logs = ""
+                    self.logNotice = "历史日志已清理；新日志继续记录。"
+                case .failure(let error): self.logError = "清理失败：\(error.localizedDescription)"
+                }
+            }
         }
     }
 

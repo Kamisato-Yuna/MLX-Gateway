@@ -25,6 +25,11 @@ jobs:
           test "$(uname -m)" = arm64
       - name: Swift 6 model discovery and service tests
         run: ./script/test.sh
+      - name: Client panels and updater tests
+        run: |
+          ./script/test_performance.sh
+          ./script/test-responses-playground.sh
+          ./script/test_updates.sh
       - name: Compile application and Icon Composer resources
         run: |
           xcodebuild -project MLXGateway.xcodeproj -scheme MLXGateway \

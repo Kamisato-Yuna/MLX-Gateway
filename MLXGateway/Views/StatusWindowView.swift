@@ -1,7 +1,14 @@
 import SwiftUI
 
+enum GatewayPanel: String, CaseIterable, Identifiable {
+    case logs = "运行日志", playground = "快速测试", performance = "性能分析", updates = "客户端更新"
+    var id: String { rawValue }
+}
+
 struct StatusWindowView: View {
     @ObservedObject var controller: GatewayController
+    @ObservedObject var updater: AppUpdateController
+    @Binding var panel: GatewayPanel
 
     var body: some View {
         NavigationSplitView {
@@ -52,9 +59,32 @@ struct StatusWindowView: View {
             }
         } detail: {
             VStack(alignment: .leading, spacing: 0) {
-                modelHeader
-                Divider().padding(.horizontal, 24)
-                logViewer
+                Picker("工作面板", selection: $panel) {
+                    ForEach(GatewayPanel.allCases) { Text($0.rawValue).tag($0) }
+                }.pickerStyle(.segmented).padding(.horizontal, 24).padding(.vertical, 14)
+                if panel != .updates, updater.hasUpdate || updater.errorMessage != nil {
+                    HStack(spacing: 12) {
+                        Label(updater.errorMessage == nil ? "客户端有可用更新" : "客户端更新需要处理",
+                              systemImage: updater.errorMessage == nil ? "arrow.up.circle" : "exclamationmark.triangle")
+                        Spacer()
+                        Button("查看更新") { panel = .updates }
+                    }
+                    .font(.callout).padding(.horizontal, 24).padding(.bottom, 12)
+                }
+                ZStack {
+                    VStack(spacing: 0) {
+                        modelHeader
+                        Divider().padding(.horizontal, 24)
+                        RuntimeLogView(controller: controller)
+                    }.panelVisibility(panel == .logs)
+                    ResponsesPlaygroundView(baseURL: controller.activeBaseURL, modelID: controller.selectedModelID)
+                        .panelVisibility(panel == .playground)
+                    PerformancePanelView(monitor: controller.performance, benchmark: controller.benchmark,
+                        baseURL: controller.activeBaseURL, modelID: controller.backend.modelID,
+                        backendReady: controller.backend.state == .ready)
+                        .panelVisibility(panel == .performance)
+                    AppUpdateView(updater: updater).panelVisibility(panel == .updates)
+                }
             }
             .navigationTitle("MLX Gateway")
             .navigationSubtitle("本机模型 · Responses 网关")
@@ -79,7 +109,7 @@ struct StatusWindowView: View {
                 }
             }
         }
-        .frame(minWidth: 920, minHeight: 650)
+        .frame(minWidth: 1060, minHeight: 760)
         .sheet(isPresented: $controller.showingSettings, onDismiss: controller.restoreSettings) { settingsSheet }
     }
 
@@ -166,43 +196,6 @@ struct StatusWindowView: View {
         .disabled(value.isEmpty).help(title)
     }
 
-    private var logViewer: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Label("运行日志", systemImage: "terminal").font(.headline)
-                Spacer()
-                Toggle("跟随最新", isOn: $controller.followLogs).toggleStyle(.switch).controlSize(.small)
-                    .help("只控制自动滚动；关闭后日志仍会更新")
-                Button(action: controller.openLogs) { Label("在访达中显示日志", systemImage: "folder") }
-                    .labelStyle(.iconOnly).buttonStyle(.borderless).disabled(controller.logs.isEmpty)
-                    .help("在访达中显示完整的本地日志文件")
-            }
-            if controller.logs.isEmpty {
-                ContentUnavailableView("等待模型启动", systemImage: "text.page", description: Text("加载进度、错误与推理日志将在这里显示。"))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollViewReader { proxy in
-                    ScrollView([.vertical, .horizontal]) {
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text(controller.logs).font(.system(size: 12, design: .monospaced))
-                                .textSelection(.enabled).fixedSize(horizontal: true, vertical: true)
-                            Color.clear.frame(height: 1).id("log-end")
-                        }.padding(.vertical, 8).frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .onChange(of: controller.logs) { _, _ in
-                        if controller.followLogs { proxy.scrollTo("log-end", anchor: .bottomLeading) }
-                    }
-                    .onChange(of: controller.followLogs) { _, follow in
-                        if follow { proxy.scrollTo("log-end", anchor: .bottomLeading) }
-                    }
-                    .onAppear { if controller.followLogs { proxy.scrollTo("log-end", anchor: .bottomLeading) } }
-                }
-            }
-            Text("全部模型 · 最近 64 KB · \(controller.followLogs ? "自动滚动到最新" : "自动滚动已暂停，日志继续更新")")
-                .font(.caption).foregroundStyle(.secondary)
-        }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
     private var settingsSheet: some View {
         VStack(alignment: .leading, spacing: 16) {
             Label("MLX Gateway 设置", systemImage: "slider.horizontal.3").font(.title2.weight(.semibold))
@@ -256,6 +249,13 @@ struct StatusWindowView: View {
                     .accessibilityLabel("选择\(title)").help("选择\(title)")
             }
         }.padding(.vertical, 3).disabled(!controller.canConfigure)
+    }
+}
+
+private extension View {
+    /// Keep drafts and active test tasks alive when switching panels.
+    func panelVisibility(_ visible: Bool) -> some View {
+        opacity(visible ? 1 : 0).allowsHitTesting(visible).disabled(!visible).accessibilityHidden(!visible)
     }
 }
 

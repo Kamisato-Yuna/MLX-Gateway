@@ -18,10 +18,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-@main
 struct MLXGatewayApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var controller = GatewayController()
+    @StateObject private var updater = AppUpdateController()
+    @State private var selectedPanel: GatewayPanel = .logs
     @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
@@ -46,15 +47,33 @@ struct MLXGatewayApp: App {
         }
 
         Window("MLX Gateway", id: "status") {
-            StatusWindowView(controller: controller)
+            StatusWindowView(controller: controller, updater: updater, panel: $selectedPanel)
+                .task { updater.startAutomaticChecks() }
         }
         .commands {
             CommandGroup(after: .appInfo) {
+                Button("检查更新…") {
+                    selectedPanel = .updates
+                    updater.checkForUpdates()
+                    openWindow(id: "status")
+                }
                 Button("设置…") { controller.showingSettings = true; openWindow(id: "status") }
                     .keyboardShortcut(",", modifiers: .command)
             }
         }
         .defaultSize(width: 1060, height: 760)
         .defaultLaunchBehavior(.presented)
+    }
+}
+
+@main
+enum MLXGatewayEntryPoint {
+    @MainActor
+    static func main() {
+        if CommandLine.arguments.dropFirst().first == "--mlx-gateway-update-helper" {
+            let code = AppUpdateHelper.run(arguments: Array(CommandLine.arguments.dropFirst(2)))
+            Darwin.exit(code)
+        }
+        MLXGatewayApp.main()
     }
 }

@@ -6,6 +6,8 @@ cd "$ROOT_DIR"
 mkdir -p build/tests
 SOURCES=(MLXGateway/Models/ModelRegistry.swift MLXGateway/Support/JSONSupport.swift
   MLXGateway/Support/HTTPTypes.swift MLXGateway/Support/ResponsesAdapter.swift
+  MLXGateway/Support/ResponsesFiles.swift MLXGateway/Support/BackendStream.swift MLXGateway/Support/ResponsesStream.swift
+  MLXGateway/Support/ResponsesStore.swift MLXGateway/Support/RequestMetricsStore.swift
   MLXGateway/Services/BackendManager.swift MLXGateway/Services/GatewayServer.swift)
 case "${1:-}" in
   '')
