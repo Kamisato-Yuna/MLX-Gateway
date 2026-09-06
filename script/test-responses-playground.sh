@@ -19,11 +19,16 @@ xcrun swiftc -swift-version 6 -target arm64-apple-macos26.0 -module-cache-path "
 xcrun swiftc -swift-version 6 -target arm64-apple-macos26.0 -module-cache-path "$work/modules" \
     -parse-as-library MLXGateway/Models/ResponsesTest*.swift MLXGateway/Support/ResponsesClient*.swift \
     MLXGateway/Services/ResponsesPlayground*.swift Tests/ResponsesPlaygroundTests.swift -o "$work/tests"
-python3 Tests/responses_playground_fixture.py "$work/port" &
+python3 Tests/responses_playground_fixture.py "$work/port" > "$work/fixture.log" 2>&1 &
 fixture_pid=$!
-for _ in {1..100}; do
+for _ in {1..600}; do
     [[ -s "$work/port" ]] && break
+    kill -0 "$fixture_pid" 2>/dev/null || break
     sleep 0.05
 done
-[[ -s "$work/port" ]] || { echo 'fixture failed to start' >&2; exit 1; }
+[[ -s "$work/port" ]] || {
+    echo 'fixture failed to start within 30 seconds' >&2
+    cat "$work/fixture.log" >&2
+    exit 1
+}
 "$work/tests" "http://127.0.0.1:$(cat "$work/port")/v1"
