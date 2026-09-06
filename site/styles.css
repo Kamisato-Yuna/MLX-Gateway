@@ -1351,6 +1351,10 @@ h1 {
     }
 }
 @media (max-width: 370px) {
+  .section-heading h2 {
+    font-size: 32px;
+    letter-spacing: -1.5px;
+  }
     .site-header nav {
         gap: 10px;
     }
