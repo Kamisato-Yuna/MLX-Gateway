@@ -5,6 +5,7 @@ import json
 import os
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from socketserver import TCPServer
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--host')
@@ -43,4 +44,13 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
         print('fixture request completed', flush=True)
 
-ThreadingHTTPServer((args.host, args.port), Handler).serve_forever()
+class LocalFixtureServer(ThreadingHTTPServer):
+    def server_bind(self):
+        # HTTPServer normally calls getfqdn(), which can block on reverse DNS in CI.
+        # This fixture uses a numeric loopback address and has no need for a DNS name.
+        TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
+server = LocalFixtureServer((args.host, args.port), Handler)
+print('fixture listening', flush=True)
+server.serve_forever()
