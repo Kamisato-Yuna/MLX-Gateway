@@ -1,0 +1,7 @@
+{
+  "version": "v0.2.0",
+  "title": "MLX Gateway 0.2.0",
+  "notes": "新增日志清理与高亮、Responses 快速测试、模型性能分析及客户端自动更新。扩展流式、函数工具、图像/PDF和会话能力。",
+  "download_url": "https://github.com/Kamisato-Yuna/MLX-Gateway/releases/download/v0.2.0/MLXGateway-0.2.0-macos-arm64.zip",
+  "asset_name": "MLXGateway-0.2.0-macos-arm64.zip"
+}

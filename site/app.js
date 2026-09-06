@@ -143,7 +143,7 @@ document.querySelectorAll("[data-copy]").forEach((button) => {
     });
 });
 
-// Source access remains usable without JavaScript or when GitHub is unavailable.
+// Download and source links remain usable without JavaScript or when GitHub is unavailable.
 async function loadRelease() {
     const releaseStatus = document.querySelector("#release-status");
     const controller = new AbortController();
@@ -183,7 +183,7 @@ async function loadRelease() {
         releaseStatus.replaceChildren(link);
         // A release alone does not establish a signed or notarized macOS installer.
         document.querySelector(".release-copy > p").textContent =
-            "源码持续开放。GitHub 已有新发布，安装包及签名信息请查阅对应发布说明。";
+            "下载客户端，连接你的本地模型。安装包及签名信息请查阅对应发布说明。";
     } catch {
         releaseStatus.textContent =
             "暂时无法同步版本，前往 GitHub Releases 查看最新进展。";
