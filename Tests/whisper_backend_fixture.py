@@ -1,6 +1,8 @@
 """A real child listener for supervisor lifecycle tests; no model dependencies."""
-import json
+import os
 import sys
+print(f"Fixture interpreter started: pid={os.getpid()} executable={sys.executable}", flush=True)
+import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 state = {"loaded": False, "loads": 0, "fail": False}
@@ -30,4 +32,6 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
-ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), Handler).serve_forever()
+server = ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), Handler)
+print(f"Fixture listening: pid={os.getpid()} port={server.server_port}", flush=True)
+server.serve_forever()
