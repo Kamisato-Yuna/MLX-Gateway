@@ -245,7 +245,7 @@ h1 {
 .hero-art {
     position: absolute;
     width: 66%;
-    right: -7%;
+    right: max(-7%, -40px);
     top: 50%;
     transform: translateY(-51%);
     aspect-ratio: 1;
@@ -330,6 +330,46 @@ h1 {
     color: var(--muted);
     margin: 0;
     padding-left: 20px;
+}
+.capabilities {
+    padding-top: 80px;
+}
+.capability-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 40px;
+}
+.capability-grid article {
+    border-top: 1px solid var(--line);
+    padding-top: 22px;
+}
+.capability-label {
+    color: var(--blue);
+    font: 11px ui-monospace, SFMono-Regular, monospace;
+    letter-spacing: 1.5px;
+}
+.capability-grid h3 {
+    font-size: 22px;
+    font-weight: 600;
+    margin: 18px 0 14px;
+}
+.capability-grid p {
+    font-size: 15px;
+    line-height: 1.9;
+    color: var(--muted);
+    margin: 0 0 20px;
+}
+.endpoint {
+    display: block;
+    font: 12px/1.8 ui-monospace, SFMono-Regular, monospace;
+    color: #365684;
+    overflow-wrap: anywhere;
+}
+.capability-note {
+    font-size: 12px;
+    line-height: 1.9;
+    color: #63718b;
+    margin: 30px 0 0;
 }
 .experience {
     padding-top: 110px;
@@ -639,6 +679,7 @@ h1 {
     margin: 23px 0 0;
     text-align: center;
 }
+.capability-note a,
 .scope-note a,
 .build-note a {
     color: var(--blue);
@@ -647,6 +688,7 @@ h1 {
     gap: 5px;
     align-items: center;
 }
+.capability-note svg,
 .scope-note svg,
 .build-note svg {
     width: 15px;
@@ -1082,6 +1124,16 @@ h1 {
     .principles p {
         font-size: 14px;
         max-width: 510px;
+    }
+    .capabilities {
+        padding-top: 65px;
+    }
+    .capability-grid {
+        grid-template-columns: 1fr;
+        gap: 30px;
+    }
+    .capability-grid h3 {
+        font-size: 21px;
     }
     .experience {
         padding-top: 80px;

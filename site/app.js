@@ -44,7 +44,7 @@ let demoTimer;
 let running = false;
 const descriptions = [
     "选择不会触发加载。API 请求也不会替你启动或切换模型。",
-    "由你手动启停。同一时刻只运行一个模型，停止后释放其占用的内存。",
+    "文本与视觉模型同一时刻运行一个，停止后释放内存。音频与图像服务独立管理。",
     "将模型 ID 与 API 地址填入客户端，以 Responses 文本接口发出请求。",
 ];
 const connectionExample =
@@ -156,11 +156,6 @@ async function loadRelease() {
                 signal: controller.signal,
             },
         );
-        if (response.status === 404) {
-            releaseStatus.textContent =
-                "尚无正式 Release · 你可以在 GitHub 关注发布进展。";
-            return;
-        }
         if (!response.ok) throw new Error("Release unavailable");
         const release = await response.json();
         const url = new URL(release.html_url);
@@ -181,12 +176,10 @@ async function loadRelease() {
         link.rel = "noopener noreferrer";
         link.textContent = `最新 Release：${release.tag_name} · 查看发布内容`;
         releaseStatus.replaceChildren(link);
-        // A release alone does not establish a signed or notarized macOS installer.
-        document.querySelector(".release-copy > p").textContent =
-            "下载客户端，连接你的本地模型。安装包及签名信息请查阅对应发布说明。";
+        // Keep verified installer details tied to the static version, not the API response.
     } catch {
-        releaseStatus.textContent =
-            "暂时无法同步版本，前往 GitHub Releases 查看最新进展。";
+        // Preserve the known release link and direct download when the query fails.
+        releaseStatus.append(" · 暂时无法同步最新版本");
     } finally {
         clearTimeout(timeout);
     }
