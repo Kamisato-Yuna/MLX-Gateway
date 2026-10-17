@@ -14,6 +14,9 @@ struct StatusWindowView: View {
         NavigationSplitView {
             List(selection: $controller.selectedModelID) {
                 Section("本地模型 · \(controller.registry.models.count)") {
+                    if controller.registry.models.isEmpty && !controller.scanningModels {
+                        Text("在设置中选择文本或视觉模型目录").font(.caption).foregroundStyle(.secondary)
+                    }
                     ForEach(controller.registry.models) { model in
                         HStack(spacing: 10) {
                             Image(systemName: model.backend.symbol)
@@ -33,12 +36,39 @@ struct StatusWindowView: View {
                         .padding(.vertical, 8).tag(model.id).help(model.id)
                     }
                 }
+                Section("音频转写") {
+                    HStack(spacing: 10) {
+                        Image(systemName: "waveform").foregroundStyle(.tint).frame(width: 24).accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(controller.audioService.configuration?.title ?? "配置语音转写").font(.headline).lineLimit(2)
+                            Text(controller.audioService.configuration?.model ?? "OpenAI 兼容服务").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                        if controller.audioService.state == .ready {
+                            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).accessibilityLabel("转写就绪")
+                        }
+                    }
+                    .padding(.vertical, 8).tag(AudioServiceController.selectionID)
+                }
+                Section("图像生成") {
+                    HStack(spacing: 10) {
+                        Image(systemName: "photo.artframe").foregroundStyle(.tint).frame(width: 24).accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(controller.imageService.configuration?.title ?? "配置图像生成").font(.headline).lineLimit(2)
+                            Text(controller.imageService.configuration?.model ?? "OpenAI 兼容图像服务").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                        if controller.imageStatus.state == .ready {
+                            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green).accessibilityLabel("图像服务就绪")
+                        } else if controller.imageStatus.state == .starting || controller.imageStatus.state == .stopping {
+                            Image(systemName: "hourglass").foregroundStyle(.orange).accessibilityLabel(controller.imageStatus.state.rawValue)
+                        }
+                    }
+                    .padding(.vertical, 8).tag(ImageGenerationService.selectionID)
+                }
             }
             .overlay {
                 if controller.scanningModels && controller.registry.models.isEmpty { ProgressView("扫描模型…") }
-                else if controller.registry.models.isEmpty {
-                    ContentUnavailableView("没有本地模型", systemImage: "folder.badge.questionmark", description: Text("在设置中选择 MLX 与模型目录。"))
-                }
             }
             .navigationSplitViewColumnWidth(min: 250, ideal: 285, max: 380)
             .safeAreaInset(edge: .bottom) {
@@ -58,48 +88,55 @@ struct StatusWindowView: View {
                 }.padding(18)
             }
         } detail: {
-            VStack(alignment: .leading, spacing: 0) {
-                Picker("工作面板", selection: $panel) {
-                    ForEach(GatewayPanel.allCases) { Text($0.rawValue).tag($0) }
-                }.pickerStyle(.segmented).padding(.horizontal, 24).padding(.vertical, 14)
-                if panel != .updates, updater.hasUpdate || updater.errorMessage != nil {
-                    HStack(spacing: 12) {
-                        Label(updater.errorMessage == nil ? "客户端有可用更新" : "客户端更新需要处理",
-                              systemImage: updater.errorMessage == nil ? "arrow.up.circle" : "exclamationmark.triangle")
-                        Spacer()
-                        Button("查看更新") { panel = .updates }
+            ZStack {
+                AudioTranscriptionView(controller: controller, service: controller.audioService)
+                    .panelVisibility(controller.audioSelected)
+                ImageGenerationView(controller: controller)
+                    .panelVisibility(controller.imageSelected)
+                VStack(alignment: .leading, spacing: 0) {
+                    Picker("工作面板", selection: $panel) {
+                        ForEach(GatewayPanel.allCases) { Text($0.rawValue).tag($0) }
+                    }.pickerStyle(.segmented).padding(.horizontal, 24).padding(.vertical, 14)
+                    if panel != .updates, updater.hasUpdate || updater.errorMessage != nil {
+                        HStack(spacing: 12) {
+                            Label(updater.errorMessage == nil ? "客户端有可用更新" : "客户端更新需要处理",
+                                  systemImage: updater.errorMessage == nil ? "arrow.up.circle" : "exclamationmark.triangle")
+                            Spacer()
+                            Button("查看更新") { panel = .updates }
+                        }
+                        .font(.callout).padding(.horizontal, 24).padding(.bottom, 12)
                     }
-                    .font(.callout).padding(.horizontal, 24).padding(.bottom, 12)
-                }
-                ZStack {
-                    VStack(spacing: 0) {
-                        modelHeader
-                        Divider().padding(.horizontal, 24)
-                        RuntimeLogView(controller: controller)
-                    }.panelVisibility(panel == .logs)
-                    ResponsesPlaygroundView(baseURL: controller.activeBaseURL, modelID: controller.selectedModelID)
-                        .panelVisibility(panel == .playground)
-                    PerformancePanelView(monitor: controller.performance, benchmark: controller.benchmark,
-                        baseURL: controller.activeBaseURL, modelID: controller.backend.modelID,
-                        backendReady: controller.backend.state == .ready)
-                        .panelVisibility(panel == .performance)
-                    AppUpdateView(updater: updater).panelVisibility(panel == .updates)
-                }
+                    ZStack {
+                        VStack(spacing: 0) {
+                            modelHeader
+                            Divider().padding(.horizontal, 24)
+                            RuntimeLogView(controller: controller)
+                        }.panelVisibility(panel == .logs)
+                        ResponsesPlaygroundView(baseURL: controller.activeBaseURL, modelID: controller.selectedModelID)
+                            .panelVisibility(panel == .playground)
+                        PerformancePanelView(monitor: controller.performance, benchmark: controller.benchmark,
+                            baseURL: controller.activeBaseURL, modelID: controller.backend.modelID,
+                            backendReady: controller.backend.state == .ready)
+                            .panelVisibility(panel == .performance)
+                        AppUpdateView(updater: updater).panelVisibility(panel == .updates)
+                    }
+                }.panelVisibility(!controller.audioSelected && !controller.imageSelected)
             }
+        }
             .navigationTitle("MLX Gateway")
-            .navigationSubtitle("本机模型 · Responses 网关")
+            .navigationSubtitle(controller.audioSelected ? "本机模型 · 音频转写" : (controller.imageSelected ? "本机模型 · 图像生成" : "本机模型 · Responses 网关"))
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) {
                     Button(action: controller.startSelectedModel) {
-                        Label(controller.startTitle, systemImage: controller.backend.pid != nil && controller.backend.modelID != controller.selectedModelID ? "arrow.triangle.swap" : "play.fill")
+                        Label(controller.startTitle, systemImage: !controller.audioSelected && !controller.imageSelected && controller.backend.pid != nil && controller.backend.modelID != controller.selectedModelID ? "arrow.triangle.swap" : "play.fill")
                     }
                     .labelStyle(.titleAndIcon)
                     .disabled(!controller.canStart)
-                    .help("启动所选模型；切换时先停止当前服务")
+                    .help(controller.audioSelected ? "手动启动服务并加载转写模型" : (controller.imageSelected ? "手动启动独立图像服务" : "启动所选模型；切换时先停止当前服务"))
                     .keyboardShortcut("r", modifiers: [.command])
-                    Button(action: controller.stopBackend) { Label("停止模型", systemImage: "stop.fill") }
+                    Button(action: controller.stopBackend) { Label(controller.audioSelected ? controller.audioService.stopTitle : (controller.imageSelected ? "停止图像服务" : "停止模型"), systemImage: "stop.fill") }
                         .disabled(!controller.canStop)
-                        .help("停止当前模型并释放内存；网关仍保持监听")
+                        .help(controller.audioSelected ? "停止或卸载转写服务；网关仍保持监听" : (controller.imageSelected ? "停止独立图像服务；网关仍保持监听" : "停止当前模型并释放内存；网关仍保持监听"))
                         .keyboardShortcut(".", modifiers: [.command])
                 }
                 ToolbarSpacer(.fixed, placement: .primaryAction)
@@ -108,7 +145,6 @@ struct StatusWindowView: View {
                         .help("查看连接与 MLX 目录设置")
                 }
             }
-        }
         .frame(minWidth: 1060, minHeight: 760)
         .sheet(isPresented: $controller.showingSettings, onDismiss: controller.restoreSettings) { settingsSheet }
     }
@@ -199,6 +235,14 @@ struct StatusWindowView: View {
     private var settingsSheet: some View {
         VStack(alignment: .leading, spacing: 16) {
             Label("MLX Gateway 设置", systemImage: "slider.horizontal.3").font(.title2.weight(.semibold))
+            Picker("设置类别", selection: $controller.serviceSettingsSelected) {
+                Text("连接与目录").tag(false)
+                Text("常驻服务").tag(true)
+            }.pickerStyle(.segmented)
+            if controller.serviceSettingsSelected {
+                PersistentServiceSettingsView(service: controller.persistentServices)
+                HStack { Spacer(); Button("关闭") { controller.showingSettings = false }.keyboardShortcut(.cancelAction) }
+            } else {
             if !controller.canConfigure {
                 Label("当前可查看设置；停止模型并等待扫描结束后可修改。", systemImage: "info.circle")
                     .font(.callout).foregroundStyle(.secondary)
@@ -236,7 +280,8 @@ struct StatusWindowView: View {
                 }
                 .buttonStyle(.glassProminent).keyboardShortcut(.defaultAction).disabled(!controller.canConfigure)
             }
-        }.padding(24).frame(width: 600, height: 650)
+            }
+        }.padding(24).frame(width: 720, height: 760)
     }
 
     private func pathField(_ title: String, value: Binding<String>, kind: String) -> some View {

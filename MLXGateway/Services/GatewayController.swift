@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Combine
 
 @MainActor
 final class GatewayController: ObservableObject {
@@ -14,9 +15,12 @@ final class GatewayController: ObservableObject {
         didSet { UserDefaults.standard.set(selectedModelID, forKey: "selectedModelID") }
     }
     @Published var showingSettings = false
+    @Published var serviceSettingsSelected = false
     @Published private(set) var gatewayReady = false
     @Published private(set) var gatewayError: String?
     @Published private(set) var backend = BackendStatus()
+    @Published private(set) var imageStatus = ImageBackendStatus()
+    @Published private(set) var imageLogTail = ""
     @Published private(set) var logs = ""
     @Published private(set) var clearingLogs = false
     @Published private(set) var logError: String?
@@ -31,6 +35,10 @@ final class GatewayController: ObservableObject {
     @Published private(set) var runtimeIssue: String?
 
     let backendManager: BackendManager
+    let mediaBackend: MediaBackendManager
+    let audioService: AudioServiceController
+    let imageService: ImageGenerationService
+    let persistentServices: PersistentServiceController
     let performance = PerformanceMonitor()
     let benchmark = ModelBenchmarkRunner()
     private var server: GatewayServer!
@@ -39,6 +47,10 @@ final class GatewayController: ObservableObject {
     private var logReadTask: Task<Void, Never>?
     private var terminationObserver: NSObjectProtocol?
     private var copyTask: Task<Void, Never>?
+    private var imageLogTask: Task<Void, Never>?
+    private var readingImageLog = false
+    private var audioObservation: AnyCancellable?
+    private var pendingServiceSettings = false
     private var appliedGatewayHost = ""
     private var appliedGatewayPort = ""
     private var appliedModelHost = ""
@@ -48,11 +60,17 @@ final class GatewayController: ObservableObject {
     init() {
         let defaults = UserDefaults.standard
         let paths = RuntimePaths.saved
+        let controlOnly = ProcessInfo.processInfo.arguments.contains("--service-control")
+        persistentServices = PersistentServiceController(paths: paths, controlOnly: controlOnly)
         appliedPaths = paths
         runtimeDirectory = paths.directory
         modelsDirectory = paths.models
         pythonExecutable = paths.python
         backendManager = BackendManager(pythonExecutable: paths.python)
+        mediaBackend = MediaBackendManager(config: .default())
+        let audioProxy = AudioTranscriptionProxy(configuration: .load(runtimeDirectory: paths.directory))
+        audioService = AudioServiceController(proxy: audioProxy, runtimeDirectory: paths.directory)
+        imageService = ImageGenerationService(runtimeDirectory: paths.directory)
         gatewayHost = defaults.string(forKey: "gatewayHost") ?? "127.0.0.1"
         gatewayPort = defaults.string(forKey: "gatewayPort") ?? "44110"
         modelHost = defaults.string(forKey: "modelHost") ?? "127.0.0.1"
@@ -65,11 +83,22 @@ final class GatewayController: ObservableObject {
         activeBaseURL = LocalEndpoint.url(host: gatewayHost, port: UInt16(gatewayPort) ?? 44110)?
             .appendingPathComponent("v1").absoluteString ?? ""
         server = GatewayServer(registry: registry, backendManager: backendManager,
-                               host: gatewayHost, port: UInt16(gatewayPort) ?? 44110)
+                               host: gatewayHost, port: UInt16(gatewayPort) ?? 44110,
+                               mediaManager: mediaBackend, audioProxy: audioProxy, imageService: imageService)
+        audioObservation = audioService.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        persistentServices.prepareForHandoff = { [weak self] in self?.showingSettings = false }
         server.onStateChange = { [weak self] ready, error in
             Task { @MainActor in self?.gatewayReady = ready; self?.gatewayError = error }
         }
-        do { try server.start() } catch { gatewayError = error.localizedDescription }
+        if !controlOnly {
+            do { try server.start() } catch { gatewayError = error.localizedDescription }
+            if mediaBackend.serve3D || mediaBackend.serveDecisions { mediaBackend.start() }
+        }
+        if controlOnly || ProcessInfo.processInfo.arguments.contains("--show-service-settings") || defaults.bool(forKey: "showServiceSettingsOnce") {
+            defaults.removeObject(forKey: "showServiceSettingsOnce")
+            serviceSettingsSelected = true
+            pendingServiceSettings = true
+        }
         refreshModels()
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 0.75, repeats: true) { [weak self] _ in
@@ -81,28 +110,55 @@ final class GatewayController: ObservableObject {
                 self?.benchmark.cancel()
                 self?.performance.stop()
                 self?.logReadTask?.cancel()
+                self?.imageLogTask?.cancel()
                 self?.server.stop()
                 self?.backendManager.shutdown()
+                self?.mediaBackend.shutdown()
+                self?.audioService.shutdown()
+                self?.imageService.shutdown()
             }
         }
     }
 
     var selectedModel: ModelSpec? { registry.models.first { $0.id == selectedModelID } }
+    func presentStartupServiceSettings() {
+        guard pendingServiceSettings else { return }
+        pendingServiceSettings = false
+        showingSettings = true
+    }
+    var audioSelected: Bool { selectedModelID == AudioServiceController.selectionID }
+    var imageSelected: Bool { selectedModelID == ImageGenerationService.selectionID }
     var activeModel: ModelSpec? { registry.models.first { $0.id == backend.modelID } }
     var busy: Bool { backend.state == .starting || backend.state == .stopping }
     var canStart: Bool {
-        gatewayReady && selectedModel != nil && runtimeIssue == nil && !busy && !scanningModels
+        if audioSelected { return gatewayReady && audioService.canStart }
+        if imageSelected {
+            return gatewayReady && imageService.configuration?.validationMessage == nil
+                && [.stopped, .failed].contains(imageStatus.state)
+        }
+        return gatewayReady && selectedModel != nil && runtimeIssue == nil && !busy && !scanningModels
             && !(backend.state == .ready && backend.modelID == selectedModelID)
     }
-    var canStop: Bool { (backend.pid != nil || backend.state == .starting) && backend.state != .stopping }
-    var canConfigure: Bool { backend.pid == nil && !busy && !scanningModels }
+    var canStop: Bool {
+        if audioSelected { return audioService.canStop }
+        if imageSelected { return imageStatus.pid != nil || imageStatus.state == .starting }
+        return (backend.pid != nil || backend.state == .starting) && backend.state != .stopping
+    }
+    var canConfigure: Bool {
+        !persistentServices.controlOnly && backend.pid == nil && !busy && !scanningModels && audioService.canConfigure
+            && imageStatus.pid == nil && ![.starting, .stopping].contains(imageStatus.state)
+    }
     var startTitle: String {
+        if audioSelected { return audioService.busy ? audioService.title : (audioService.state == .ready ? "转写模型已就绪" : audioService.startTitle) }
+        if imageSelected { return imageStatus.state == .ready ? "图像服务已就绪" : (imageStatus.state == .starting ? "正在启动图像服务…" : "启动图像服务") }
         if busy { return backend.state == .stopping ? "正在停止…" : "正在加载…" }
         if backend.state == .ready && backend.modelID == selectedModelID { return "模型运行中" }
         return backend.pid != nil ? "切换并启动" : "启动模型"
     }
 
     func startSelectedModel() {
+        if audioSelected { if gatewayReady { audioService.start() }; return }
+        if imageSelected { if canStart { imageService.start() }; return }
         guard canStart, let selectedModel else { return }
         backend = BackendStatus(state: .starting, modelID: selectedModel.id, backend: selectedModel.backend.rawValue,
                                 message: "正在启动所选模型。")
@@ -110,6 +166,8 @@ final class GatewayController: ObservableObject {
     }
 
     func stopBackend() {
+        if audioSelected { audioService.stop(); return }
+        if imageSelected { imageService.stop(); return }
         guard canStop else { return }
         backend.state = .stopping
         backend.message = "正在停止 MLX 服务并释放模型。"
@@ -124,7 +182,7 @@ final class GatewayController: ObservableObject {
             let result = await Task.detached(priority: .userInitiated) { ModelRegistry(modelsRoot: paths.models) }.value
             registry = result
             server.updateRegistry(result)
-            if !result.models.contains(where: { $0.id == selectedModelID }) { selectedModelID = result.defaultModel?.id }
+            if !audioSelected && !imageSelected && !result.models.contains(where: { $0.id == selectedModelID }) { selectedModelID = result.defaultModel?.id }
             runtimeIssue = FileManager.default.isExecutableFile(atPath: paths.python) ? nil : "未找到可执行的 MLX Python，请在设置中选择环境。"
             scanSummary = result.scanMessage ?? (result.models.isEmpty ? "目录中没有找到模型，请检查模型目录。" : "已扫描到 \(result.models.count) 个本地模型")
             scanningModels = false
@@ -195,6 +253,8 @@ final class GatewayController: ObservableObject {
             appliedModelHost = modelHost
             appliedModelPort = modelPortValue
             appliedPaths = paths
+            audioService.useRuntimeDirectory(paths.directory)
+            imageService.reload(runtimeDirectory: paths.directory)
             backendManager.configurePython(paths.python)
             activeBaseURL = LocalEndpoint.url(host: gatewayHost, port: gatewayPortValue)!.appendingPathComponent("v1").absoluteString
             for (key, value) in [("gatewayHost", gatewayHost), ("gatewayPort", gatewayPort), ("modelHost", modelHost), ("modelPort", modelPort),
@@ -219,6 +279,17 @@ final class GatewayController: ObservableObject {
     }
 
     private func refresh() {
+        audioService.refresh()
+        imageStatus = imageService.status
+        if !readingImageLog {
+            readingImageLog = true
+            let service = imageService
+            imageLogTask = Task {
+                let tail = await Task.detached(priority: .utility) { service.readLogTail() }.value
+                if !Task.isCancelled { imageLogTail = tail }
+                readingImageLog = false
+            }
+        }
         backend = backendManager.status
         performance.refresh(pid: backend.pid, modelID: backend.modelID)
         guard !readingLogs, !clearingLogs else { return }

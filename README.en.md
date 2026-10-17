@@ -6,7 +6,7 @@
 
 A native macOS Liquid Glass app that connects local MLX models to an **OpenAI Responses** endpoint. Built with **Swift 6**, for **Apple Silicon and macOS 26+**.
 
-Choose your MLX runtime, Python interpreter and model directory. The app discovers models from `config.json`, runs one model at a time, shows logs, and explicitly stops the previous process when switching. API calls never start or switch models.
+Choose your MLX runtime, Python interpreter and model directory. The app discovers text and vision models from `config.json`, runs one of these models at a time, shows logs, and stops the previous process when switching. Optional audio and image services have separate manual controls. API calls never start, load or switch models.
 
 ## Getting started
 
@@ -28,6 +28,7 @@ Default gateway: `http://127.0.0.1:44110/v1`. Default internal MLX port: `44100`
 - `GET` / `DELETE /v1/responses/{id}`, `GET /v1/responses/{id}/input_items`, `POST /v1/responses/{id}/cancel`
 - VLM supports image inputs, inline PDFs and constrained JSON Schema output; both backends accept inline UTF-8 text files
 - Public Chat Completions and Anthropic routes return 404
+- `POST /v1/images/generations`: optional synchronous PNG generation through a configured `mlx-serve` service; only `n=1` and `response_format="b64_json"`. Select the image service in the sidebar and start it first. Image edits, image streaming and Responses `image_generation` are not supported
 - Strict function schemas, audio, cloud-hosted tools, uploaded file IDs/URLs and unimplemented parameters return explicit errors
 - Capabilities depend on the installed backend and model. Stored responses are local to the gateway process and disappear after restart; `previous_response_id` does not inherit previous instructions
 
@@ -40,6 +41,8 @@ response = client.responses.create(
 )
 print(response.output_text)
 ```
+
+For image generation, create `image-service/gateway.json` under your selected runtime directory. Set `title`, `model`, `model_path`, `executable_path`, `host` and `port`. Use a complete, compatible model package and an installed `mlx-serve` binary. Keep absolute paths in this local configuration. The gateway does not download missing weights. See the [Chinese configuration example](README.md#独立图像生成服务) for fields and supported parameters.
 
 The app includes searchable, highlighted logs with a clear action; a Responses playground with presets, custom JSON projects, raw SSE inspection and manual tool-result submission; and a performance panel with CPU/memory sampling, request timings, token usage and repeated tests. API keys for custom endpoints remain in memory. Automatic updates support GitHub Release or a Pages manifest and validate downloaded apps before installation.
 
@@ -55,6 +58,6 @@ Disabling log following pauses automatic scrolling, not updates. Logs stay at `~
 ./script/test_updates.sh
 ```
 
-Tests use temporary model directories and an isolated HTTP fixture. They do not prove real inference. The opt-in `MLX_GATEWAY_RUNTIME="$HOME/MLX" ./script/test.sh --live` requires the OpenAI Python SDK and loads **all discovered models sequentially**. GitHub CI uses the official `xcode-27` preview runner to run Swift 6 tests and compile the app and Icon Composer assets.
+Tests use temporary model directories and an isolated HTTP fixture. They do not prove real inference. The opt-in `MLX_GATEWAY_RUNTIME="$HOME/MLX" ./script/test.sh --live` requires the OpenAI Python SDK and loads **all discovered Responses models sequentially**. GitHub CI uses the official `xcode-27` preview runner to run Swift 6 tests and compile the app and Icon Composer assets.
 
 The project is in early development. Distribution artifacts and their validation are documented per release; CI never publishes an unsigned app. See the [Chinese guide](README.md) for detailed build, settings and protocol documentation.

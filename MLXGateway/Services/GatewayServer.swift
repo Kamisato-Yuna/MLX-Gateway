@@ -5,11 +5,15 @@ import Network
 final class GatewayServer: @unchecked Sendable {
     private var registry: ModelRegistry
     private let backendManager: BackendManager
+    private let mediaManager: MediaBackendManager
+    private let audioProxy: AudioTranscriptionProxy
+    private let imageService: ImageGenerationService
     private let queue = DispatchQueue(label: "dev.kamisato-yuna.MLXGateway.gateway")
     private var listener: NWListener?
     private var connections: [ObjectIdentifier: NWConnection] = [:]
     private let responses = ResponsesStore()
     private var connectionJobs: [ObjectIdentifier: ResponseRecord] = [:]
+    private var audioJobs: [ObjectIdentifier: BackendRequestCancellation] = [:]
     private var host: String
     private var port: UInt16
     private var stateHandler: (@Sendable (Bool, String?) -> Void)?
@@ -20,9 +24,15 @@ final class GatewayServer: @unchecked Sendable {
 
     func updateRegistry(_ registry: ModelRegistry) { queue.sync { self.registry = registry } }
 
-    init(registry: ModelRegistry, backendManager: BackendManager, host: String, port: UInt16) {
+    init(registry: ModelRegistry, backendManager: BackendManager, host: String, port: UInt16,
+         mediaManager: MediaBackendManager = MediaBackendManager(),
+         audioProxy: AudioTranscriptionProxy = AudioTranscriptionProxy(),
+         imageService: ImageGenerationService = ImageGenerationService(runtimeDirectory: RuntimePaths.saved.directory)) {
         self.registry = registry
         self.backendManager = backendManager
+        self.mediaManager = mediaManager
+        self.audioProxy = audioProxy
+        self.imageService = imageService
         self.host = host
         self.port = port
     }
@@ -72,12 +82,15 @@ final class GatewayServer: @unchecked Sendable {
     func stop() { queue.sync { stopLocked() } }
 
     private func stopLocked() {
+        imageService.shutdown()
         listener?.cancel()
         listener = nil
         for record in Array(responses.records.values) where !record.finished {
             fail(record, .error(statusCode: 503, message: "The gateway stopped during this request.", code: "gateway_stopped"))
         }
         connections.values.forEach { $0.cancel() }
+        audioJobs.values.forEach { $0.cancel() }
+        audioJobs.removeAll()
         connections.removeAll()
         connectionJobs.removeAll()
     }
@@ -138,9 +151,10 @@ final class GatewayServer: @unchecked Sendable {
                 send(.json(object: ["ok": true, "service": "MLX Gateway", "protocol": "responses"]), on: connection)
             case ("GET", "/status"):
                 send(.json(object: ["gateway": ["host": host, "port": port], "backend": backendManager.status.publicDescription,
-                                    "models": registry.models.map { $0.publicDescription }, "responses": Self.protocolDescription]), on: connection)
+                                    "image_backend": imageService.status.publicDescription,
+                                    "models": modelsDescription(), "responses": Self.protocolDescription]), on: connection)
             case ("GET", "/v1/models"):
-                send(.json(object: ["object": "list", "data": registry.models.map { $0.publicDescription }]), on: connection)
+                send(.json(object: ["object": "list", "data": modelsDescription()]), on: connection)
             case ("POST", "/v1/responses"):
                 guard let body = JSONSupport.object(from: request.body) else { throw ResponsesAdapter.invalid("Expected a JSON object.", "body") }
                 guard let modelID = body["model"] as? String, let model = registry.model(id: modelID) else {
@@ -177,11 +191,71 @@ final class GatewayServer: @unchecked Sendable {
                 else { record.connection = connection; watch(record, on: connection) }
                 // Queue the start after the initial background response is enqueued for sending.
                 queue.async { [weak self] in self?.run(record) }
+            case ("POST", "/v1/3d/generations"):
+                mediaRoute(request, downstreamPath: "v1/3d/generations", on: connection)
+            case ("POST", "/v1/images/generations"):
+                guard imageService.configuration != nil else {
+                    send(.error(statusCode: 404, message: "图像服务未配置。", code: "not_found"), on: connection); return
+                }
+                imageService.forward(request) { [weak self] response in
+                    guard let self else { return }
+                    self.queue.async { self.send(response, on: connection) }
+                }
+            case ("POST", "/v1/decisions"):
+                mediaRoute(request, downstreamPath: "v1/decisions", on: connection)
+            case ("POST", "/v1/audio/transcriptions"), ("POST", "/audio/transcriptions"):
+                let key = ObjectIdentifier(connection)
+                audioJobs[key] = audioProxy.forward(request) { [weak self] response in
+                    guard let self else { connection.cancel(); return }
+                    self.queue.async {
+                        guard self.audioJobs.removeValue(forKey: key) != nil, self.connections[key] != nil else { return }
+                        self.send(response, on: connection)
+                    }
+                }
+                watchAudio(on: connection)
             default:
                 send(.error(statusCode: 404, message: "Route not found. Use POST /v1/responses for inference.", code: "not_found"), on: connection)
             }
         } catch let error as ResponsesAdapter.InvalidRequest { send(error.response, on: connection) }
         catch { send(.error(statusCode: 400, message: "Invalid Responses request.", code: "bad_request"), on: connection) }
+    }
+
+    /// `/v1/models` listing: the scanned text/vision models plus, when enabled, the
+    /// media (3D) and decision model descriptor(s) served by the downstream mlx-serve.
+    private func modelsDescription() -> [[String: Any]] {
+        var result = registry.models.map { $0.publicDescription }
+        if let audioModel = audioProxy.modelDescription { result.append(audioModel) }
+        if let imageModel = imageService.modelDescription { result.append(imageModel) }
+        if mediaManager.serve3D {
+            result.append([
+                "id": "ddalcu/Hunyuan3D-2.1-MLX-Serve-8bit", "object": "model", "created": 0,
+                "owned_by": "mlx-serve", "capabilities": ["3d"], "backend": "mlx-serve",
+                "host": mediaManager.baseURL?.absoluteString ?? ""
+            ])
+        }
+        if mediaManager.serveDecisions {
+            result.append([
+                "id": "laya", "object": "model", "created": 0,
+                "owned_by": "mlx-serve", "capabilities": ["decisions"], "backend": "mlx-serve",
+                "host": mediaManager.baseURL?.absoluteString ?? ""
+            ])
+        }
+        return result
+    }
+
+    /// Handle a media/decision route. Off by default: when the media backend is not
+    /// enabled (or decisions specifically disabled), these routes report 404 like any
+    /// unknown route, preserving the pre-media gateway contract.
+    private func mediaRoute(_ request: HTTPRequest, downstreamPath: String, on connection: NWConnection) {
+        let enabled = downstreamPath == "v1/decisions" ? mediaManager.serveDecisions : mediaManager.serve3D
+        guard enabled else {
+            send(.error(statusCode: 404, message: "Route not found. Use POST /v1/responses for inference.", code: "not_found"), on: connection)
+            return
+        }
+        mediaManager.forward(path: downstreamPath, body: request.body) { [weak self] response in
+            guard let self else { return }
+            self.queue.async { self.send(response, on: connection) }
+        }
     }
 
     static var protocolDescription: [String: Any] { [
@@ -257,12 +331,20 @@ final class GatewayServer: @unchecked Sendable {
     }
     private func disconnected(_ connection: NWConnection) {
         let key = ObjectIdentifier(connection)
+        audioJobs.removeValue(forKey: key)?.cancel()
         connections.removeValue(forKey: key)
         guard let record = connectionJobs.removeValue(forKey: key) else { return }
         record.subscribers.removeValue(forKey: key)
         if record.connection === connection { record.connection = nil }
         if !record.finished, !record.background {
             fail(record, .error(statusCode: 499, message: "The client disconnected.", code: "client_disconnected"), cancelled: true)
+        }
+    }
+    private func watchAudio(on connection: NWConnection) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 1) { [weak self, weak connection] _, _, complete, error in
+            guard let self, let connection else { return }
+            if complete || error != nil { self.disconnected(connection); connection.cancel() }
+            else if self.audioJobs[ObjectIdentifier(connection)] != nil { self.watchAudio(on: connection) }
         }
     }
     private func subscribe(_ record: ResponseRecord, on connection: NWConnection, startingAfter: Int?) {
@@ -284,6 +366,17 @@ final class GatewayServer: @unchecked Sendable {
             for subscriber in Array(record.subscribers.values) { subscriber.append(event.data) }
         }
     }
+    private func startHeartbeat(for record: ResponseRecord, mapper: ResponsesStream) {
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + .seconds(5), repeating: .seconds(5))
+        timer.setEventHandler { [weak self, weak record] in
+            guard let self, let record, !record.finished else { return }
+            self.emit([mapper.progress()], for: record)
+            record.response = mapper.response
+        }
+        record.heartbeat = timer
+        timer.resume()
+    }
     private func run(_ record: ResponseRecord) {
         guard !record.finished else { return }
         record.response["status"] = "in_progress"
@@ -292,6 +385,7 @@ final class GatewayServer: @unchecked Sendable {
             emit(mapper.start(), for: record)
             record.response = mapper.response
             guard !record.finished else { return }
+            startHeartbeat(for: record, mapper: mapper)
             record.cancellation = backendManager.stream(modelID: model, chatData: record.chatData, bytes: { [weak self] bytes in
                 guard let self else { return }
                 self.queue.async {
@@ -342,6 +436,7 @@ final class GatewayServer: @unchecked Sendable {
     }
     private func fail(_ record: ResponseRecord, _ failure: HTTPResponse, cancelled: Bool = false) {
         guard !record.finished else { return }
+        record.heartbeat?.cancel(); record.heartbeat = nil
         record.cancellation?.cancel()
         if let mapper = record.mapper {
             let event = mapper.fail(failure, cancelled: cancelled)
@@ -358,6 +453,7 @@ final class GatewayServer: @unchecked Sendable {
     }
     private func finish(_ record: ResponseRecord, status: Int, error: String? = nil) {
         guard !record.finished else { return }
+        record.heartbeat?.cancel(); record.heartbeat = nil
         record.finished = true; record.finishedAt = Date(); record.cancellation = nil
         let usage = record.response["usage"] as? [String: Any]
         let incomplete = record.response["status"] as? String == "incomplete"

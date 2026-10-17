@@ -10,7 +10,7 @@
 
 - **你的目录，你的模型**：指定 MLX 运行目录，自动扫描模型；Python 与模型目录可分别选择。
 - **一个统一出口**：Responses 文本、流式、函数工具与存储会话；视觉模型支持图像与内联 PDF，客户端使用固定的 `base_url`。
-- **按需使用内存**：同一时刻运行一个模型，切换时先停止旧进程，退出应用也会释放它启动的服务。
+- **按需使用内存**：文本/视觉模型由用户手动选择和启停；独立图像生成与音频服务也可手动管理。退出应用会释放 Gateway 启动的服务。
 - **原生交互**：侧栏选择、复制模型 ID / 地址反馈、启动与停止快捷键、实时日志与独立自动滚动控制。
 - **模型调试**：预置与自定义 Responses 测试、完整 JSON 编辑、原始 SSE 事件和工具结果提交。
 - **性能观察**：CPU/内存趋势、请求耗时与 token 统计、串行预置性能测试和 JSON 导出。
@@ -81,6 +81,7 @@ mkdir -p ~/MLX/models
 | GET | `/status` | 当前 MLX 状态、模型、PID 与协议能力 |
 | GET | `/v1/models` | 已配置模型及网关开放能力 |
 | POST | `/v1/responses` | 非流式或渐进 SSE 推理 |
+| POST | `/v1/images/generations` | 同步图像生成，返回 base64 PNG |
 | GET / DELETE | `/v1/responses/{id}` | 查询或删除已保存响应 |
 | GET | `/v1/responses/{id}/input_items` | 分页读取输入历史 |
 | POST | `/v1/responses/{id}/cancel` | 取消后台响应 |
@@ -103,11 +104,73 @@ Anthropic `/v1/messages` 和公开 `/v1/chat/completions` 返回 404。Chat Comp
 
 `store=true` 会话保存在本次网关进程内存，重启清空；容量和到期策略由 `/status` 说明。`previous_response_id` 恢复历史输入输出，不继承上一轮 `instructions`。达到输出预算时返回 `incomplete`，并保留实际 usage。
 
-不会读取请求中的任意本机文件路径；内联文件通过 `file_data` 提交。`file_id` / `file_url`、音频、云托管工具、未实现参数等明确返回错误，不静默丢弃。模型架构、工具模板与下游版本仍决定是否能实际完成请求；这不是 OpenAI 云服务全部托管能力的替代。
+不会读取请求中的任意本机文件路径；内联文件通过 `file_data` 提交。`file_id` / `file_url`、Responses 内音频、云托管工具、未实现参数等明确返回错误，不静默丢弃。模型架构、工具模板与下游版本仍决定是否能实际完成请求；这不是 OpenAI 云服务全部托管能力的替代。
+
+### 独立图像生成服务
+
+图像服务有独立的侧栏入口和手动启停按钮。它不会因文本模型、视觉模型、媒体服务或音频服务的操作而自动停止。应用启动时只读取配置；不会自动启动服务。生成面板会请求本机 Gateway，显示 PNG，并允许保存文件。
+
+在运行目录创建 `image-service/gateway.json`。路径使用你本机的实际目录：
+
+```json
+{
+  "title": "Qwen Image 2.1 UC",
+  "model": "qwen-image-uc-mlx-serve",
+  "model_path": "/absolute/path/to/runtime/.staging/qwen-image-uc-mlx-serve",
+  "executable_path": "/absolute/path/to/runtime/.tools/mlx-serve-macos-arm64/mlx-serve",
+  "host": "127.0.0.1",
+  "port": 44130,
+  "readiness_timeout": 300,
+  "request_timeout": 1800
+}
+```
+
+`model_path` 和 `executable_path` 必须是本机绝对路径。侧栏显示配置中的名称、模型、目录和服务状态。修改运行目录后保存设置，以重新读取配置。开始生成前，先手动启动图像服务并等待“就绪”。图像生成使用 `POST /v1/images/generations`，同步返回 `data[0].b64_json` PNG。请求支持 `n=1`、`response_format=b64_json`、尺寸 `512x512`、`1024x1024`、`1024x1536` 或 `1536x1024`、`steps` 1–100、`seed` 0–4294967295、`guidance_scale` 0–20 和可选 `negative_prompt`。`guidance_scale` 默认为 1；`negative_prompt` 仅在引导强度不为 1 时参与生成。未知字段返回 HTTP 400。启动等待时间和生成请求超时可分别设为 1–1800 秒。当前不支持图像编辑或 Responses `image_generation` 工具。
+
+以下请求通过已运行的本机 Gateway 生成一张 PNG：
+
+```bash
+curl http://127.0.0.1:44110/v1/images/generations \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"qwen-image-uc-mlx-serve","prompt":"一只在海边看日落的猫","n":1,"size":"1024x1024","steps":28,"seed":42,"response_format":"b64_json"}'
+```
+
+模型目录必须由用户准备并保持只读。若使用 Qwen Image 2.1 UC 映射副本，请将映射结果放在 `model_path` 指向的目录；原始模型文件保持不变。配置、模型路径和本机权重不包含在项目发布内容中。
+
+### 独立音频转写服务
+
+本机现已配置 Gateway 与 Whisper 的登录自启、进程保活和模型恢复。安装位置、日志、停用及更新步骤见 [常驻服务维护](docs/local-service-operations.md)。这是本机部署选项，未启用该部署时仍按下面的手动管理流程运行。
+
+Gateway 可转发到已启动的 OpenAI 兼容 STT 服务。在运行目录中创建 `audio-service/gateway.json`：
+
+```json
+{
+  "baseURL": "http://127.0.0.1:44120/v1",
+  "model": "whisper-1",
+  "timeout": 180,
+  "displayName": "Whisper large-v3-turbo"
+}
+```
+
+侧栏“音频转写”显示已配置的模型。选择模型可查看状态、复制连接信息、修改服务设置及选择音频文件测试。配置缺失或无效时，转写路由返回 404。
+
+先启动 STT 服务，再在 Gateway 中手动加载模型。服务设置可以指定可执行的本地启动脚本 `launchScript`；没有脚本时，只连接已有服务。由 Gateway 启动的进程会在停止服务或退出时结束。对已有进程执行“卸载转写模型”只卸载模型，保留服务。加载和卸载要求下游支持 `POST/DELETE /v1/models?model_name=…`，加载状态由 `GET /v1/models` 检查。客户端转写请求不会启动服务或加载模型。恢复期间最多等待 12 秒检查就绪；到期返回 503，且不提交转写。就绪后只提交一次；提交后连接中断返回 502，不自动重发。
+
+客户端 Base URL 为 `http://127.0.0.1:44110/v1`，模型名为配置中的 `model`。`whisper-1` 可以是本地 Whisper 模型的别名，不表示使用 OpenAI 托管权重。接口支持 `POST /v1/audio/transcriptions`，也接受 `POST /audio/transcriptions`。
+
+使用 multipart 上传 `file` 和 `model`。可选字段为 `language` 与 `response_format`。格式支持 `json`、`text`、`verbose_json`、`vtt`，默认 `json`。WebVTT 字幕时间直接来自下游 `verbose_json.segments`；缺少有效时间戳时返回 502。其他字段或格式返回 400，不会静默丢弃。请求总大小上限为 16 MiB。下游错误保留原 HTTP 状态、响应正文与 `Retry-After`。
+
+```bash
+curl http://127.0.0.1:44110/v1/audio/transcriptions \
+  -F model=whisper-1 -F language=zh \
+  -F file=@sample.wav
+```
+
+此配置适用于本机无鉴权后端。Gateway 不向下游转发客户端凭证。保持回环地址监听；远端和容器接入需要另行验证网络与访问控制。音频路由不改变 Responses 的输入能力。
 
 ## Build And Run
 
-本地验证使用 Xcode 27 beta 6（27A5252f）、Swift 6 语言模式、macOS 26+，**仅 arm64**。默认脚本选择 `/Applications/Xcode-beta.app/Contents/Developer`，可通过 `DEVELOPER_DIR` 指定其他 Xcode 27 安装位置。
+本地构建使用 Xcode 27、Swift 6 语言模式和 macOS 26+，**仅 arm64**。脚本默认使用 `xcode-select -p` 当前选定的 Xcode；也可通过 `DEVELOPER_DIR` 指定其他 Xcode 27 安装位置。
 
 ```bash
 git clone https://github.com/Kamisato-Yuna/MLX-Gateway.git
@@ -175,6 +238,10 @@ print(response.output_text)
 ```
 
 [Responses 官方参考](https://developers.openai.com/api/reference/resources/responses/methods/create) · [Swift 6 迁移文档](https://www.swift.org/migration/) · [Xcode 27 CI 运行器说明](https://github.com/actions/runner-images/issues/14404)
+
+本轮图像服务、模型内存限制和仓库清理结果见 [图像接入验证记录](docs/verification-images-2026-10-17.md)。
+
+0.3.0 的构建、公证和发布结果见 [版本验证记录](docs/verification-0.3.0.md)。
 
 0.2.0 的界面、协议、更新与发布验证见 [版本验证记录](docs/verification-0.2.0.md)；早期版本记录见 [验证记录](docs/verification.md)。
 

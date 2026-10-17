@@ -15,7 +15,8 @@ client = OpenAI(base_url='http://127.0.0.1:44319/v1', api_key='local', timeout=1
 for _ in range(30):
     try:
         with urllib.request.urlopen('http://127.0.0.1:44319/v1/models', timeout=2) as r:
-            models = [entry['id'] for entry in json.load(r)['data']]
+            models = [entry['id'] for entry in json.load(r)['data']
+                      if 'responses' in entry.get('capabilities', [])]
         break
     except urllib.error.URLError:
         if host.poll() is not None:

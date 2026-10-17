@@ -57,6 +57,11 @@ final class ResponsesStream: @unchecked Sendable {
         response["status"] = "in_progress"
         return [created, event("response.in_progress", ["response": response])]
     }
+    func progress() -> Event {
+        response["status"] = "in_progress"
+        response["output"] = output
+        return event("response.in_progress", ["response": response])
+    }
     private func textIndex(reasoning: Bool) -> Int {
         let type = reasoning ? "reasoning" : "message"
         if let index = output.firstIndex(where: { $0["type"] as? String == type }) { return index }

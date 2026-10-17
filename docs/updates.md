@@ -8,11 +8,11 @@
 
 ```json
 {
-  "version": "v0.2.0",
-  "title": "MLX Gateway 0.2.0",
+  "version": "v0.3.0",
+  "title": "MLX Gateway 0.3.0",
   "notes": "更新说明",
-  "download_url": "https://github.com/Kamisato-Yuna/MLX-Gateway/releases/download/v0.2.0/MLXGateway-0.2.0-macos-arm64.zip",
-  "asset_name": "MLXGateway-0.2.0-macos-arm64.zip"
+  "download_url": "https://github.com/Kamisato-Yuna/MLX-Gateway/releases/download/v0.3.0/MLXGateway-0.3.0-macos-arm64.zip",
+  "asset_name": "MLXGateway-0.3.0-macos-arm64.zip"
 }
 ```
 
@@ -30,7 +30,7 @@ ZIP 由 macOS 自带 libarchive 逐块读取，累计实际产出最多 2 GiB；
 
 下载完成后先在临时目录解压并验证 bundle identifier、语义版本、arm64 主程序、严格嵌套
 代码签名、Apple 信任链以及与当前应用相同的 TeamIdentifier。
-`v0.2.0` 与 `0.2.0` 等价；预发布版本及 build metadata 比较使用同一份 Swift 实现。
+`v0.3.0` 与 `0.2.0` 等价；预发布版本及 build metadata 比较使用同一份 Swift 实现。
 
 点击“安装并重启”会启动签名客户端自身的 helper 模式。helper 在目标应用的父目录
 建立独立暂存目录，重新受限解压并完成全部验证后输出 `READY`；GUI 收到后才正常退出。
@@ -48,7 +48,7 @@ ZIP 由 macOS 自带 libarchive 逐块读取，累计实际产出最多 2 GiB；
 
 工程在创建 SwiftUI App 或任何控制器之前分派 `--mlx-gateway-update-helper`。
 新 Swift 源须加入应用 target。libarchive 从固定系统路径动态载入，无额外链接参数。
-`script/package_update.sh` 仅保留维护者兼容入口，不再复制到 Bundle。
+维护者直接使用下面的客户端 helper 命令；旧的 shell 转发入口已移除。
 
 仅受限解压并验签，保留结果供 `codesign`、`stapler`、`spctl` 检查；输出目录必须不存在：
 
@@ -85,4 +85,4 @@ helper 退出码 0 表示替换成功且系统接受启动请求，非零表示�
 - 替换失败、启动失败、恢复失败时旧包保留，以及 helper 准备错误。
 
 这些隔离测试不启动 GUI 或模型，不单独证明正式发布、公证票据或实际升级验收。
-0.2.0 的真实签名公证包另已通过解压后签名、公证票据、Gatekeeper、隔离安装及实际重启，详见 [验证记录](verification-0.2.0.md#发布与自动更新)。
+0.3.0 的构建和公证记录见 [验证记录](verification-0.3.0.md)。0.2.0 的真实签名公证包另已通过解压后签名、公证票据、Gatekeeper、隔离安装及实际重启，详见 [验证记录](verification-0.2.0.md#发布与自动更新)。

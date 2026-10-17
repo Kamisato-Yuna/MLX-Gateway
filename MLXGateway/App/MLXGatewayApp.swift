@@ -10,7 +10,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // SIG_IGN would instead make children inherit an ignored SIGTERM.
         signal(SIGTERM) { _ in }
         let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
-        source.setEventHandler { NSApp.terminate(nil) }
+        source.setEventHandler {
+            // A settings sheet otherwise defers AppKit termination during service handoff.
+            for window in NSApp.windows {
+                if let sheet = window.attachedSheet { NSApp.endSheet(sheet); sheet.orderOut(nil) }
+            }
+            DispatchQueue.main.async { NSApp.terminate(nil) }
+        }
         source.resume()
         terminationSignal = source
         NSApp.setActivationPolicy(.regular)
@@ -27,7 +33,7 @@ struct MLXGatewayApp: App {
 
     var body: some Scene {
         MenuBarExtra("MLX Gateway", systemImage: "cpu") {
-            Text(controller.backend.title)
+            Text(controller.audioSelected ? controller.audioService.title : controller.backend.title)
             Divider()
             Button("显示主窗口") {
                 openWindow(id: "status")
@@ -35,7 +41,7 @@ struct MLXGatewayApp: App {
             }
             Button("启动所选模型", action: controller.startSelectedModel)
                 .disabled(!controller.canStart)
-            Button("停止 MLX 服务") {
+            Button(controller.audioSelected ? controller.audioService.stopTitle : "停止 MLX 服务") {
                 controller.stopBackend()
             }
             .disabled(!controller.canStop)
@@ -48,7 +54,10 @@ struct MLXGatewayApp: App {
 
         Window("MLX Gateway", id: "status") {
             StatusWindowView(controller: controller, updater: updater, panel: $selectedPanel)
-                .task { updater.startAutomaticChecks() }
+                .task {
+                    controller.presentStartupServiceSettings()
+                    updater.startAutomaticChecks()
+                }
         }
         .commands {
             CommandGroup(after: .appInfo) {

@@ -1,6 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode-beta.app/Contents/Developer}"
+export DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
 cd "$(dirname "$0")/.."
 work=$(mktemp -d /tmp/responses-playground-test.XXXXXX)
 fixture_pid=''

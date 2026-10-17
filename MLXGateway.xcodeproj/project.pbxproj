@@ -43,6 +43,17 @@
 		B00000000000000000000030 /* ResponsesFiles.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000002F /* ResponsesFiles.swift */; };
 		B00000000000000000000032 /* AppUpdateArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000031 /* AppUpdateArchive.swift */; };
 		B00000000000000000000034 /* AppUpdateHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000033 /* AppUpdateHelper.swift */; };
+		C00000000000000000000011 /* MediaGatewayConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00000000000000000000001 /* MediaGatewayConfig.swift */; };
+		C00000000000000000000012 /* MediaBackendManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00000000000000000000002 /* MediaBackendManager.swift */; };
+				C00000000000000000000013 /* AudioTranscriptionProxy.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00000000000000000000003 /* AudioTranscriptionProxy.swift */; };
+		D00000000000000000000011 /* AudioServiceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000001 /* AudioServiceController.swift */; };
+		D00000000000000000000012 /* AudioTranscriptionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000002 /* AudioTranscriptionView.swift */; };
+		E00000000000000000000001 /* ImageGenerationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E00000000000000000000003 /* ImageGenerationService.swift */; };
+		E00000000000000000000002 /* ImageGenerationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E00000000000000000000004 /* ImageGenerationView.swift */; };
+		F00000000000000000000011 /* PersistentServiceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000001 /* PersistentServiceController.swift */; };
+		F00000000000000000000012 /* PersistentServiceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000002 /* PersistentServiceSettingsView.swift */; };
+		F00000000000000000000013 /* service_manager.py in Resources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000003 /* service_manager.py */; };
+		F00000000000000000000014 /* whisper_supervisor.py in Resources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000004 /* whisper_supervisor.py */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -84,6 +95,17 @@
 		B0000000000000000000002F /* ResponsesFiles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResponsesFiles.swift; sourceTree = "<group>"; };
 		B00000000000000000000031 /* AppUpdateArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdateArchive.swift; sourceTree = "<group>"; };
 		B00000000000000000000033 /* AppUpdateHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdateHelper.swift; sourceTree = "<group>"; };
+		C00000000000000000000001 /* MediaGatewayConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaGatewayConfig.swift; sourceTree = "<group>"; };
+		C00000000000000000000002 /* MediaBackendManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaBackendManager.swift; sourceTree = "<group>"; };
+				C00000000000000000000003 /* AudioTranscriptionProxy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioTranscriptionProxy.swift; sourceTree = "<group>"; };
+		D00000000000000000000001 /* AudioServiceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioServiceController.swift; sourceTree = "<group>"; };
+		D00000000000000000000002 /* AudioTranscriptionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioTranscriptionView.swift; sourceTree = "<group>"; };
+		E00000000000000000000003 /* ImageGenerationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageGenerationService.swift; sourceTree = "<group>"; };
+		E00000000000000000000004 /* ImageGenerationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageGenerationView.swift; sourceTree = "<group>"; };
+		F00000000000000000000001 /* PersistentServiceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistentServiceController.swift; sourceTree = "<group>"; };
+		F00000000000000000000002 /* PersistentServiceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PersistentServiceSettingsView.swift; sourceTree = "<group>"; };
+		F00000000000000000000003 /* service_manager.py */ = {isa = PBXFileReference; lastKnownFileType = text.script.python; path = script/service_manager.py; sourceTree = SOURCE_ROOT; };
+		F00000000000000000000004 /* whisper_supervisor.py */ = {isa = PBXFileReference; lastKnownFileType = text.script.python; path = script/whisper_supervisor.py; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -105,6 +127,8 @@
 		A00000000000000000000040 = {
 			isa = PBXGroup;
 			children = (
+				F00000000000000000000004 /* whisper_supervisor.py */,
+				F00000000000000000000003 /* service_manager.py */,
 				A00000000000000000000041 /* MLXGateway */,
 				A00000000000000000000050 /* Products */,
 			);
@@ -145,6 +169,7 @@
 		A00000000000000000000044 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				F00000000000000000000001 /* PersistentServiceController.swift */,
 				B0000000000000000000000F /* ResponsesPlaygroundSession.swift */,
 				B0000000000000000000000D /* ResponsesPlaygroundProjectStore.swift */,
 				B0000000000000000000000B /* PerformanceMonitor.swift */,
@@ -154,6 +179,7 @@
 				A00000000000000000000004 /* BackendManager.swift */,
 				A00000000000000000000005 /* GatewayServer.swift */,
 				A00000000000000000000006 /* GatewayController.swift */,
+				D00000000000000000000001 /* AudioServiceController.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -161,11 +187,14 @@
 		A00000000000000000000045 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				F00000000000000000000002 /* PersistentServiceSettingsView.swift */,
 				B0000000000000000000002D /* RuntimeLogView.swift */,
 				B0000000000000000000002B /* ResponsesPlaygroundView.swift */,
 				B00000000000000000000029 /* PerformancePanelView.swift */,
 				B00000000000000000000027 /* AppUpdateView.swift */,
 				A00000000000000000000002 /* StatusWindowView.swift */,
+				D00000000000000000000002 /* AudioTranscriptionView.swift */,
+				E00000000000000000000004 /* ImageGenerationView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -190,6 +219,10 @@
 				A00000000000000000000007 /* HTTPTypes.swift */,
 				A00000000000000000000008 /* JSONSupport.swift */,
 				A00000000000000000000010 /* ResponsesAdapter.swift */,
+				C00000000000000000000001 /* MediaGatewayConfig.swift */,
+				C00000000000000000000002 /* MediaBackendManager.swift */,
+				C00000000000000000000003 /* AudioTranscriptionProxy.swift */,
+				E00000000000000000000003 /* ImageGenerationService.swift */,
 			);
 			path = Support;
 			sourceTree = "<group>";
@@ -260,7 +293,9 @@
         A00000000000000000000071 /* Resources */ = {
             isa = PBXResourcesBuildPhase;
             buildActionMask = 2147483647;
-            files = (A0000000000000000000001A /* AppIcon.icon in Resources */,);
+            files = (
+				F00000000000000000000014 /* whisper_supervisor.py in Resources */,
+				F00000000000000000000013 /* service_manager.py in Resources */,A0000000000000000000001A /* AppIcon.icon in Resources */,);
             runOnlyForDeploymentPostprocessing = 0;
         };
 /* End PBXResourcesBuildPhase section */
@@ -270,6 +305,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F00000000000000000000012 /* PersistentServiceSettingsView.swift in Sources */,
+				F00000000000000000000011 /* PersistentServiceController.swift in Sources */,
 				B00000000000000000000034 /* AppUpdateHelper.swift in Sources */,
 				B00000000000000000000032 /* AppUpdateArchive.swift in Sources */,
 				B00000000000000000000030 /* ResponsesFiles.swift in Sources */,
@@ -305,6 +342,13 @@
 				A00000000000000000000017 /* HTTPTypes.swift in Sources */,
 				A00000000000000000000018 /* JSONSupport.swift in Sources */,
 				A00000000000000000000019 /* ResponsesAdapter.swift in Sources */,
+				C00000000000000000000011 /* MediaGatewayConfig.swift in Sources */,
+				C00000000000000000000012 /* MediaBackendManager.swift in Sources */,
+				C00000000000000000000013 /* AudioTranscriptionProxy.swift in Sources */,
+				D00000000000000000000011 /* AudioServiceController.swift in Sources */,
+				D00000000000000000000012 /* AudioTranscriptionView.swift in Sources */,
+				E00000000000000000000001 /* ImageGenerationService.swift in Sources */,
+				E00000000000000000000002 /* ImageGenerationView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -449,7 +493,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 0.2.0;
+				MARKETING_VERSION = 0.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "dev.kamisato-yuna.MLXGateway";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -472,6 +516,7 @@
 				CODE_SIGNING_REQUIRED = YES;
 				CODE_SIGN_STYLE = Manual;
 				ENABLE_HARDENED_RUNTIME = YES;
+				OTHER_CODE_SIGN_FLAGS = "--timestamp";
 				COMBINE_HIDPI_IMAGES = YES;
 				DEVELOPMENT_TEAM = 852H844JG2;
 				ENABLE_APP_SANDBOX = NO;
@@ -483,7 +528,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 0.2.0;
+				MARKETING_VERSION = 0.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "dev.kamisato-yuna.MLXGateway";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;

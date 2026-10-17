@@ -29,7 +29,7 @@ enum ResponsesAdapter {
     static func prepare(_ body: [String: Any], model: ModelSpec? = nil, history: [[String: Any]] = []) throws -> Prepared {
         try keys(body, ["model", "input", "instructions", "max_output_tokens", "temperature", "top_p", "stream", "store",
                         "metadata", "tools", "tool_choice", "parallel_tool_calls", "text", "previous_response_id",
-                        "background", "truncation", "include", "stream_options"], "")
+                        "background", "truncation", "include", "stream_options", "prompt_cache_key", "prompt_cache_retention"], "")
         guard let modelID = body["model"] as? String, !modelID.isEmpty else {
             throw invalid("Specify the model selected in MLX Gateway.", "model")
         }
@@ -143,6 +143,8 @@ enum ResponsesAdapter {
         }
         guard pending.isEmpty else { throw invalid("Supply outputs for all pending function calls before requesting another response.", "input") }
         var normalized = body
+        normalized.removeValue(forKey: "prompt_cache_key")
+        normalized.removeValue(forKey: "prompt_cache_retention")
         normalized["stream"] = stream; normalized["background"] = background; normalized["store"] = store
         normalized["parallel_tool_calls"] = parallel
         var chat: [String: Any] = ["model": modelID, "messages": messages, "stream": stream,

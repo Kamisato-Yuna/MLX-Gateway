@@ -112,6 +112,13 @@ let messages = try ResponsesAdapter.chatRequest([
 let mapped = messages["messages"] as! [[String: Any]]
 check(mapped.count == 4 && mapped[0]["content"] as? String == "遵守证据", "instructions prepended")
 check(mapped[1]["role"] as? String == "system" && mapped[2]["content"] as? String == "收到", "developer and assistant history")
+let hermesCacheHints = try ResponsesAdapter.prepare([
+    "model": modelID, "input": "你好", "store": false,
+    "prompt_cache_key": "hermes:session:test",
+    "prompt_cache_retention": ["type": "in_memory", "ttl": 300]
+])
+check(hermesCacheHints.chat["messages"] is [[String: Any]] && hermesCacheHints.request["prompt_cache_key"] == nil,
+      "Hermes prompt-cache hints are accepted and not forwarded to MLX")
 for (key, value) in [("conversation", "conv_x" as Any), ("tool_choice", "unknown"), ("background", "yes"),
                      ("max_output_tokens", -1), ("max_output_tokens", 1.5), ("temperature", true),
                      ("stream", "true"), ("top_p", 2)] {
@@ -249,6 +256,8 @@ let fixtureMethod = #"""
                     time.sleep(0.2)
                     emit({'tool_calls': [{'index': 0, 'function': {'arguments': '"上海"}'}}]})
                 else:
+                    if text == 'stream-slow-first-byte':
+                        time.sleep(6)
                     emit({'content': '你'}, fragmented=True)
                     time.sleep(0.2)
                     emit({'content': '好'})
@@ -303,13 +312,17 @@ let gatewayPort: UInt16 = 44219
 let modelPort: UInt16 = 44220
 try LocalEndpoint.checkAvailable(host: "127.0.0.1", port: gatewayPort)
 try LocalEndpoint.checkAvailable(host: "127.0.0.1", port: modelPort)
-let server = GatewayServer(registry: ModelRegistry(models: [fixtureModel, second]), backendManager: backend, host: "127.0.0.1", port: gatewayPort)
+let server = GatewayServer(registry: ModelRegistry(models: [fixtureModel, second]), backendManager: backend, host: "127.0.0.1", port: gatewayPort,
+                           audioProxy: AudioTranscriptionProxy(configuration: nil))
 try server.start()
 testState.cleanup = { server.stop(); backend.shutdown(); try? FileManager.default.removeItem(at: temporary) }
 defer { testState.cleanup() }
 awaitCondition("gateway listens") { request(gatewayPort, "health").0 == 200 }
 check(request(gatewayPort, "v1/messages", simple).0 == 404, "Anthropic route removed")
 check(request(gatewayPort, "v1/chat/completions", simple).0 == 404, "public Chat route removed")
+check(request(gatewayPort, "v1/3d/generations", ["model": "x", "image": "eA=="]).0 == 404, "3D media route disabled by default")
+check(request(gatewayPort, "v1/decisions", ["model": "laya", "input": "hi"]).0 == 404, "decisions route disabled by default")
+check(request(gatewayPort, "v1/audio/transcriptions", simple).0 == 404, "audio route disabled without configuration")
 check(request(gatewayPort, "v1/responses", simple).0 == 503, "no automatic backend startup")
 check(backend.status.pid == nil, "request cannot start a process")
 backend.start(model: fixtureModel, host: "127.0.0.1", port: modelPort)
@@ -386,6 +399,11 @@ check(events.filter { $0["type"] as? String == "response.output_text.delta" }.co
 check(stream.firstDelta != nil && stream.endedAt!.timeIntervalSince(stream.firstDelta!) >= 0.4, "first content arrives before delayed backend completion (true incremental SSE)")
 let completedStream = events.last?["response"] as! [String: Any]
 check((completedStream["usage"] as? [String: Any])?["output_tokens"] as? Int == 3, "stream final usage")
+let slowStream = StreamingProbe()
+slowStream.start(gatewayPort, "v1/responses", ["model": modelID, "input": "stream-slow-first-byte", "stream": true])
+let slowEvents = slowStream.wait()
+check(slowEvents.filter { $0["type"] as? String == "response.in_progress" }.count >= 2, "long stream gaps emit Responses in_progress keepalive")
+check(slowEvents.contains { $0["type"] as? String == "response.output_text.delta" }, "keepalive does not replace eventual content")
 let streamTools = StreamingProbe()
 streamTools.start(gatewayPort, "v1/responses", ["model": modelID, "input": "tools", "stream": true, "tools": tools, "tool_choice": "required"])
 let toolEvents = streamTools.wait()
@@ -488,4 +506,196 @@ awaitCondition("restart succeeds") { backend.status.state == .ready }
 _ = request(modelPort, "exit")
 awaitCondition("abnormal exit detected") { backend.status.state == .failed && backend.status.pid == nil }
 check(backend.readLogTail().contains("退出码 7"), "abnormal exit logged")
-print("PASS: \(testState.checks) checks — Responses, progressive SSE, tools, images/PDF, storage, background/resume/cancel, metrics and logs")
+
+// --- MediaGatewayConfig (Task 1) ---
+let mediaDefaults = MediaGatewayConfig.default()
+check(mediaDefaults.enabled == false, "media backend disabled by default")
+check(mediaDefaults.port == 8080, "media backend default port 8080")
+check(mediaDefaults.decisionsEnabled == false, "decisions disabled by default")
+check(mediaDefaults.executablePath.hasSuffix("mlx-serve"), "media executable path defaults under .tools")
+let mediaParsed = mediaDefaults.parsed(from: [
+    "enabled": true, "port": 9090, "decisions_enabled": true, "host": "127.0.0.1"
+])
+check(mediaParsed.enabled == true && mediaParsed.port == 9090 && mediaParsed.decisionsEnabled == true,
+      "media config parses enabled/port/decisions")
+let mediaResolved = mediaParsed.resolvedModelDirectories
+check(mediaResolved.count == 2, "resolved model dirs include image-models + decision-models when decisions on")
+check(mediaParsed.parsed(from: ["enabled": false]).enabled == false, "media config can re-disable")
+
+// --- MediaBackendManager lifecycle + forwarding (Task 2/3) ---
+let mediaPort: UInt16 = 44230
+try LocalEndpoint.checkAvailable(host: "127.0.0.1", port: mediaPort)
+let mediaFixturePath = temporary.appendingPathComponent("media_fixture.py")
+try Data(contentsOf: root.appendingPathComponent("Tests/media_fixture.py")).write(to: mediaFixturePath)
+let mediaTmp = temporary.appendingPathComponent("media-tools")
+try FileManager.default.createDirectory(at: mediaTmp, withIntermediateDirectories: true)
+// A tiny launcher script stands in for the real mlx-serve binary; the manager
+// spawns it and it ignores the extra --helper flags while honoring --port.
+let mediaLauncher = mediaTmp.appendingPathComponent("mlx-serve")
+try ("#!/bin/sh\nexec \"" + RuntimePaths.saved.python + "\" \"" + mediaFixturePath.path + "\" \"$@\"\n").write(
+    to: mediaLauncher, atomically: true, encoding: .utf8)
+try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: mediaLauncher.path)
+var mediaCfg = MediaGatewayConfig.default()
+mediaCfg = mediaCfg.parsed(from: [
+    "enabled": true, "decisions_enabled": true, "port": Int(mediaPort),
+    "executable_path": mediaLauncher.path
+])
+let mediaBackend = MediaBackendManager(config: mediaCfg, logURL: temporary.appendingPathComponent("media.log"))
+mediaBackend.start()
+awaitCondition("media backend ready") { mediaBackend.status.state == .ready }
+check(mediaBackend.status.ready == true, "media backend health check passes")
+let glbBox = ResponseBox(); let glbDone = DispatchSemaphore(value: 0)
+mediaBackend.forward(path: "v1/3d/generations", body: JSONSupport.data(from: ["model": "m", "input_image": "eA=="])) { r in
+    glbBox.lock.withLock { glbBox.status = r.statusCode; glbBox.data = r.body }; glbDone.signal()
+}
+check(glbDone.wait(timeout: .now() + 15) == .success, "3D forward completes")
+let glbBody: Data = glbBox.lock.withLock { glbBox.data }
+check(glbBox.lock.withLock { glbBox.status } == 200 && glbBody.count == 12 && String(decoding: glbBody[0..<4], as: UTF8.self) == "glTF",
+      "3D proxy returns downstream GLB bytes")
+let decBox = ResponseBox(); let decDone = DispatchSemaphore(value: 0)
+let decisionRequest: [String: Any] = ["model": "laya", "input": ["text": "hi"]]
+mediaBackend.forward(path: "v1/decisions", body: JSONSupport.data(from: decisionRequest)) { r in
+    decBox.lock.withLock { decBox.status = r.statusCode; decBox.data = r.body }; decDone.signal()
+}
+check(decDone.wait(timeout: .now() + 15) == .success, "decisions forward completes")
+let decResult: [String: Any] = decBox.lock.withLock { JSONSupport.object(from: decBox.data) ?? [:] }
+check(decBox.lock.withLock { decBox.status } == 200 && decResult["decision"] as? String == "escalate",
+      "decisions proxy returns downstream decision JSON")
+mediaBackend.shutdown()
+awaitCondition("media backend stopped") { mediaBackend.status.state == .stopped && mediaBackend.status.pid == nil }
+
+// --- Model list capabilities annotation (Task 4) ---
+let mediaListGatewayPort: UInt16 = 44231
+try LocalEndpoint.checkAvailable(host: "127.0.0.1", port: mediaListGatewayPort)
+let mediaListManager = MediaBackendManager(config: mediaCfg)  // enabled config, no process spawned
+let mediaListServer = GatewayServer(registry: ModelRegistry(models: []), backendManager: backend,
+                                    host: "127.0.0.1", port: mediaListGatewayPort, mediaManager: mediaListManager,
+                                    audioProxy: AudioTranscriptionProxy(configuration: nil))
+try mediaListServer.start()
+defer { mediaListServer.stop() }
+awaitCondition("media-list gateway listens") { request(mediaListGatewayPort, "health").0 == 200 }
+let mediaModels = request(mediaListGatewayPort, "v1/models", method: "GET").1["data"] as! [[String: Any]]
+check(mediaModels.contains { ($0["capabilities"] as? [String])?.contains("3d") == true && ($0["id"] as? String) == "ddalcu/Hunyuan3D-2.1-MLX-Serve-8bit" },
+      "/v1/models lists 3D Hunyuan3D model when media enabled")
+check(mediaModels.contains { ($0["capabilities"] as? [String])?.contains("decisions") == true && ($0["id"] as? String) == "laya" },
+      "/v1/models lists Laya decision model when decisions enabled")
+let defaultModels = request(gatewayPort, "v1/models", method: "GET").1["data"] as! [[String: Any]]
+check(!defaultModels.contains { ($0["id"] as? String) == "laya" }, "default gateway has no decision model")
+
+// Audio proxy: preserve binary multipart, text/JSON and provider error semantics.
+let audioPort: UInt16 = 44232
+let audioGatewayPort: UInt16 = 44233
+try LocalEndpoint.checkAvailable(host: "127.0.0.1", port: audioPort)
+try LocalEndpoint.checkAvailable(host: "127.0.0.1", port: audioGatewayPort)
+let audioFixture = Process()
+audioFixture.executableURL = URL(fileURLWithPath: RuntimePaths.saved.python)
+audioFixture.arguments = [root.appendingPathComponent("Tests/audio_fixture.py").path, String(audioPort)]
+audioFixture.standardOutput = FileHandle.nullDevice
+audioFixture.standardError = FileHandle.nullDevice
+try audioFixture.run()
+defer { if audioFixture.isRunning { audioFixture.terminate(); audioFixture.waitUntilExit() } }
+awaitCondition("audio fixture ready") { request(audioPort, "health").0 == 200 }
+let audioProxy = AudioTranscriptionProxy(configuration: .init(baseURL: URL(string: "http://127.0.0.1:\(audioPort)/v1")!))
+let audioServer = GatewayServer(registry: ModelRegistry(models: []), backendManager: backend,
+                               host: "127.0.0.1", port: audioGatewayPort, audioProxy: audioProxy)
+try audioServer.start()
+defer { audioServer.stop() }
+awaitCondition("audio gateway ready") { request(audioGatewayPort, "health").0 == 200 }
+let audioModels = request(audioGatewayPort, "v1/models").1["data"] as! [[String: Any]]
+check(audioModels.contains { $0["id"] as? String == "whisper-1" && ($0["capabilities"] as? [String]) == ["audio_transcription"] }, "configured STT model is discoverable")
+check(request(audioGatewayPort, "v1/audio/transcriptions", simple).0 == 400, "audio route rejects non-multipart input")
+func makeAudioRequest(_ path: String, format: String?, model: String = "whisper-1", language: String? = nil) -> URLRequest {
+    var data = Data("--fixture-audio\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n\(model)\r\n--fixture-audio\r\nContent-Disposition: form-data; name=\"file\"; filename=\"sample.wav\"\r\nContent-Type: audio/wav\r\n\r\n".utf8)
+    data.append(contentsOf: [0, 255, 128, 13, 10])
+    if let format { data.append(Data("--fixture-audio\r\nContent-Disposition: form-data; name=\"response_format\"\r\n\r\n\(format)\r\n".utf8)) }
+    if let language { data.append(Data("--fixture-audio\r\nContent-Disposition: form-data; name=\"language\"\r\n\r\n\(language)\r\n".utf8)) }
+    data.append(Data("--fixture-audio--\r\n".utf8))
+    var req = URLRequest(url: URL(string: "http://127.0.0.1:\(audioGatewayPort)/\(path)")!)
+    req.httpMethod = "POST"; req.httpBody = data; req.timeoutInterval = 15
+    req.setValue("multipart/form-data; boundary=fixture-audio", forHTTPHeaderField: "Content-Type")
+    req.setValue("Bearer client-secret", forHTTPHeaderField: "Authorization")
+    return req
+}
+func uploadAudio(_ path: String, format: String?, model: String = "whisper-1", language: String? = nil) -> (Int, Data, String, String) {
+    let req = makeAudioRequest(path, format: format, model: model, language: language)
+    let box = ResponseBox(); let done = DispatchSemaphore(value: 0)
+    let headers = AudioHeaders()
+    URLSession.shared.dataTask(with: req) { data, response, _ in
+        box.lock.withLock { box.status = (response as? HTTPURLResponse)?.statusCode ?? 0; box.data = data ?? Data() }
+        if let response = response as? HTTPURLResponse {
+            headers.lock.withLock { headers.contentType = response.value(forHTTPHeaderField: "Content-Type") ?? ""; headers.retryAfter = response.value(forHTTPHeaderField: "Retry-After") ?? "" }
+        }
+        done.signal()
+    }.resume()
+    check(done.wait(timeout: .now() + 18) == .success, "audio request completes")
+    return box.lock.withLock { (box.status, box.data, headers.contentType, headers.retryAfter) }
+}
+final class AudioHeaders: @unchecked Sendable {
+    let lock = NSLock()
+    var contentType = ""
+    var retryAfter = ""
+}
+let audioJSON = uploadAudio("v1/audio/transcriptions", format: "json")
+check(audioJSON.0 == 200 && JSONSupport.object(from: audioJSON.1)?["text"] as? String == "中文转写成功" && audioJSON.2 == "application/json", "binary multipart and JSON response survive forwarding")
+check(request(audioPort, "fixture/slow-models-once").0 == 200, "audio fixture simulates a busy model loader")
+let audioAfterLoad = uploadAudio("v1/audio/transcriptions", format: "json")
+check(audioAfterLoad.0 == 200 && JSONSupport.object(from: audioAfterLoad.1)?["text"] as? String == "中文转写成功", "transcription waits through a four-second read-only readiness probe")
+check(request(audioPort, "fixture/state").1["loads"] as? Int == 0, "readiness wait does not load or start an audio model")
+let beforeRecovery = request(audioPort, "fixture/state").1["posts"] as! Int
+check(request(audioPort, "fixture/recover").0 == 200, "fixture begins independent recovery")
+let waitedAudio = uploadAudio("v1/audio/transcriptions", format: "json")
+check(waitedAudio.0 == 200 && request(audioPort, "fixture/state").1["posts"] as? Int == beforeRecovery + 1, "repeated readiness GETs lead to exactly one transcription POST")
+check(request(audioPort, "fixture/state").1["loads"] as? Int == 0, "recovery wait cannot load the model")
+let beforeDrop = request(audioPort, "fixture/state").1["posts"] as! Int
+check(request(audioPort, "fixture/drop-next-post").0 == 200, "fixture drops a committed POST response")
+check(uploadAudio("v1/audio/transcriptions", format: "json").0 == 502, "ambiguous POST transport failure remains explicit")
+check(request(audioPort, "fixture/state").1["posts"] as? Int == beforeDrop + 1, "POST transport failure is never resubmitted")
+let beforeRedirect = request(audioPort, "fixture/state").1["posts"] as! Int
+check(request(audioPort, "fixture/redirect-next-post").0 == 200, "fixture returns a POST redirect")
+check(uploadAudio("v1/audio/transcriptions", format: "json").0 == 307, "transcription redirect is not followed")
+check(request(audioPort, "fixture/state").1["posts"] as? Int == beforeRedirect + 1 && request(audioPort, "fixture/state").1["redirected"] as? Int == 0, "redirect cannot duplicate or move the transcription submission")
+let audioText = uploadAudio("audio/transcriptions", format: "text")
+check(audioText.0 == 200 && String(decoding: audioText.1, as: UTF8.self) == "中文转写成功" && audioText.2.hasPrefix("text/plain"), "unversioned route preserves plain text")
+let audioDefault = uploadAudio("v1/audio/transcriptions", format: nil)
+check(audioDefault.0 == 200 && audioDefault.2 == "application/json", "OpenAI default response is JSON")
+check(uploadAudio("v1/audio/transcriptions", format: "srt").0 == 400, "unsupported audio format is rejected")
+check(uploadAudio("v1/audio/transcriptions", format: "json", model: "/tmp/private-model").0 == 400, "audio request cannot select arbitrary local model paths")
+let audioVTT = uploadAudio("v1/audio/transcriptions", format: "vtt")
+check(audioVTT.0 == 200 && audioVTT.2.hasPrefix("text/vtt") && String(decoding: audioVTT.1, as: UTF8.self) == "WEBVTT\n\n1\n00:00:00.120 --> 00:00:02.340\n中文转写成功\n\n", "WebVTT uses downstream segment timestamps and Chinese text")
+check(AudioTranscriptionProxy.webVTT(from: JSONSupport.data(from: ["text": "untimed"])) == nil, "WebVTT never fabricates missing timestamps")
+check(AudioTranscriptionProxy.webVTT(from: JSONSupport.data(from: ["segments": [["start": 2.0, "end": 1.0, "text": "bad"]]])) == nil, "WebVTT rejects invalid time ranges")
+check(AudioTranscriptionProxy.webVTT(from: JSONSupport.data(from: ["segments": []])) == "WEBVTT\n\n", "silence returns a valid empty WebVTT document")
+check(AudioTranscriptionProxy.webVTT(from: JSONSupport.data(from: ["text": "untimed", "segments": []])) == nil, "nonempty untimed text cannot silently disappear from WebVTT")
+check(AudioTranscriptionProxy.webVTT(from: JSONSupport.data(from: ["segments": [["start": true, "end": 2, "text": "bad"]]])) == nil, "WebVTT rejects boolean timestamps")
+let escapedVTT = AudioTranscriptionProxy.webVTT(from: JSONSupport.data(from: ["segments": [["start": 3599.999, "end": 3601.125, "text": "<中文 & 字幕>\n\n第二行"]]]))
+check(escapedVTT?.contains("00:59:59.999 --> 01:00:01.125\n&lt;中文 &amp; 字幕&gt;\n第二行") == true, "WebVTT preserves hour rollover and escapes cue markup")
+let audioError = uploadAudio("v1/audio/transcriptions", format: "vtt", language: "rate-limit")
+check(audioError.0 == 429 && audioError.3 == "3" && String(decoding: audioError.1, as: UTF8.self).contains("rate_limit"), "provider HTTP error and retry header survive forwarding")
+check(request(audioPort, "v1/models?model_name=whisper-1", method: "DELETE").0 == 204, "audio fixture model unloads")
+audioProxy.configure(.init(baseURL: URL(string: "http://127.0.0.1:\(audioPort)/v1")!, timeout: 0.6))
+let beforeExpiry = request(audioPort, "fixture/state").1["posts"] as! Int
+let expiryStarted = ProcessInfo.processInfo.systemUptime
+check(uploadAudio("v1/audio/transcriptions", format: "json").0 == 503, "API cannot auto-load an unloaded audio model")
+check(ProcessInfo.processInfo.systemUptime - expiryStarted >= 0.5 && ProcessInfo.processInfo.systemUptime - expiryStarted < 2, "readiness wait respects the configured wall-clock deadline")
+check(request(audioPort, "fixture/state").1["posts"] as? Int == beforeExpiry, "expired readiness does not submit audio")
+check((request(audioPort, "v1/models").1["data"] as? [[String: Any]])?.isEmpty == true, "audio model stays unloaded after rejected transcription")
+check(request(audioPort, "fixture/trickle-on").0 == 200, "fixture trickles a model-list response")
+let trickleStarted = ProcessInfo.processInfo.systemUptime
+check(uploadAudio("v1/audio/transcriptions", format: "json").0 == 503 && ProcessInfo.processInfo.systemUptime - trickleStarted < 2, "trickling probe bytes cannot extend the readiness deadline")
+check(request(audioPort, "fixture/trickle-off").0 == 200, "fixture ends trickling")
+audioProxy.configure(.init(baseURL: URL(string: "http://127.0.0.1:\(audioPort)/v1")!, timeout: 3))
+let beforeDisconnect = request(audioPort, "fixture/state").1
+let abandoned = URLSession.shared.dataTask(with: makeAudioRequest("v1/audio/transcriptions", format: "json"))
+abandoned.resume()
+awaitCondition("waiting request reaches model probe") { (request(audioPort, "fixture/state").1["probes"] as? Int ?? 0) > (beforeDisconnect["probes"] as! Int) }
+abandoned.cancel()
+Thread.sleep(forTimeInterval: 0.3)
+_ = request(audioPort, "fixture/recover")
+Thread.sleep(forTimeInterval: 1.2)
+check(request(audioPort, "fixture/state").1["posts"] as? Int == beforeDisconnect["posts"] as? Int, "client disconnect cancels waiting and cannot submit audio later")
+audioProxy.configure(.init(baseURL: URL(string: "http://127.0.0.1:\(audioPort)/v1")!, timeout: 0.6))
+audioFixture.terminate(); audioFixture.waitUntilExit()
+let audioUnavailable = uploadAudio("v1/audio/transcriptions", format: "json")
+check(audioUnavailable.0 == 503 && audioUnavailable.3 == "1", "unavailable backend ends bounded waiting with 503 and Retry-After")
+check(request(audioGatewayPort, "v1/chat/completions", simple).0 == 404, "audio configuration does not enable public Chat")
+print("PASS: \(testState.checks) checks — Responses, media and multipart audio transcription")

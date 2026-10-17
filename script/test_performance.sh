@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode-beta.app/Contents/Developer}"
+export DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
 cd "$(dirname "$0")/.."
 mkdir -p build/tests
 xcrun swiftc -swift-version 6 -target arm64-apple-macos26.0 -module-cache-path build/ModuleCache \

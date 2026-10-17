@@ -2,7 +2,7 @@
 set -euo pipefail
 
 MODE="${1:-run}"
-export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode-beta.app/Contents/Developer}"
+export DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
 APP_NAME="MLXGateway"
 BUNDLE_ID="dev.kamisato-yuna.MLXGateway"
 PROJECT="MLXGateway.xcodeproj"
@@ -43,6 +43,7 @@ build_app() {
     -scheme "$SCHEME" \
     -configuration "$CONFIGURATION" \
     -derivedDataPath "$DERIVED_DATA" \
+    "CONFIGURATION_BUILD_DIR=$DERIVED_DATA/Build/Products/$CONFIGURATION" \
     -destination "platform=macOS,arch=arm64" \
     "${signing_settings[@]}" \
     build

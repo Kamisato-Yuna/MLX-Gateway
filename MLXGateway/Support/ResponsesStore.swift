@@ -42,6 +42,7 @@ final class ResponseRecord: @unchecked Sendable {
     var response: [String: Any]
     var mapper: ResponsesStream?
     var cancellation: BackendRequestCancellation?
+    var heartbeat: DispatchSourceTimer?
     var finished = false
     var finishedAt: Date?
     var events: [Data] = []
