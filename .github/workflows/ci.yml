@@ -23,10 +23,10 @@ jobs:
           xcodebuild -version
           xcrun swift --version
           test "$(uname -m)" = arm64
-      - name: Swift 6 model discovery and service tests
-        run: ./script/test.sh
       - name: Persistent service recovery tests
         run: python3 -m unittest discover -s Tests -p 'test_*.py'
+      - name: Swift 6 model discovery and service tests
+        run: ./script/test.sh
       - name: Client panels and updater tests
         run: |
           ./script/test_performance.sh
