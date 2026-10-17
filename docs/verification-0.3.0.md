@@ -34,8 +34,12 @@ Release 由 Xcode 构建和签名，架构为 arm64，使用 Developer ID Applic
 
 已将同一公证 Release 安装到现有常驻应用位置。安装后 Gateway 和 Whisper 均就绪，FChat 主容器再次上传中文 WAV，得到 HTTP 200 和正确 WebVTT。逐项比对确认两个 LaunchAgent 的全部字段、音频配置、运行与模型目录、Python、监听主机和端口均不变。
 
-## CI 测试环境
+## CI 与实际 Release 验收
 
-远端恢复 fixture 未达到就绪；延长隔离测试期限后仍复现，因此撤回时间调整。测试入口增加监听 PID 与探测异常诊断，不修改真实守护程序的行为。正式服务的配置、所有权检查和恢复逻辑保持不变。
+恢复测试统一使用 `/usr/bin/python3`，与协议测试的系统解释器一致。托管环境的默认解释器曾出现 fixture 子进程存活但未监听的现象；改用系统解释器后，19 项测试约 6 秒通过。保留实际监听 PID 和 fixture 启动诊断，未放宽正式服务检查。
 
-追加诊断显示，CI 模拟子进程存活但未建立监听。恢复测试改用 `/usr/bin/python3`，与现有协议测试使用相同的系统解释器；fixture 另记录解释器启动和监听完成事件。所有恢复测试与所有权检查均保留。
+完整 [GitHub CI](https://github.com/Kamisato-Yuna/MLX-Gateway/actions/runs/39019728237) 已通过：恢复、协议、客户端/更新测试及 Release 编译全部成功。CI 仅编译，不发布或公证应用。
+
+已安装的公证 Release 另完成原生文件选择与中文转写，结果正确。FChat 容器转写也返回 HTTP 200，配置与发布前逐项一致。
+
+[0.3.0 Release](https://github.com/Kamisato-Yuna/MLX-Gateway/releases/tag/v0.3.0) 已公开。最终下载 ZIP 与本地发布包逐字节一致，下载副本的更新校验、公证票据和 Gatekeeper 检查另行记录。版本标签在草稿阶段对齐 CI 通过的提交，应用与运行脚本未在该阶段改变。

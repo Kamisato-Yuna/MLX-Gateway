@@ -12,7 +12,7 @@ macOS 统一日志显示，Gateway 的旧进程 PID 37428 在 **2026-10-17 14:40
 
 未发现对应崩溃报告，也未发现当天相关的 Jetsam 内存终止报告。现有日志不能确定退出请求来自菜单、快捷键还是外部终止信号。因此，不能将此事认定为崩溃或内存不足。此前没有启动或保活任务，正常退出后也不会恢复，导致端口 44110 持续不可用。
 
-原始日志保存在本地 `build/service-investigation/previous-exit.json`。关键摘录另存于运行目录的 `audio-service/acceptance/launchd-20261017/exit-summary.json`。原始日志未加入 Git。
+原始日志已归档到运行目录的 `archive/gateway-release-0.3.0/service-investigation/previous-exit.json`。关键摘录另存于运行目录的 `audio-service/acceptance/launchd-20261017/exit-summary.json`。原始日志未加入 Git。
 
 ## 当前部署
 
