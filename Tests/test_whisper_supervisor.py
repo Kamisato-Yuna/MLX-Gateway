@@ -32,7 +32,7 @@ class SupervisorTests(unittest.TestCase):
         self.launcher.chmod(0o700)
         self.config = self.root / "gateway.json"
         self.raw = {"baseURL": f"http://127.0.0.1:{self.port}/v1",
-                    "model": "test-whisper", "launchScript": str(self.launcher), "timeout": 5}
+                    "model": "test-whisper", "launchScript": str(self.launcher), "timeout": 15}
         self.config.write_text(json.dumps(self.raw))
         self.output = self.root / "supervisor.log"
         self.handle = self.output.open("w")
@@ -49,12 +49,14 @@ class SupervisorTests(unittest.TestCase):
         return [json.loads(line) for line in self.output.read_text().splitlines() if line.startswith("{")]
 
     def wait(self, predicate):
-        deadline = time.monotonic() + 8
+        deadline = time.monotonic() + 20
         while time.monotonic() < deadline:
             if predicate():
                 return
             time.sleep(0.05)
-        self.fail(self.output.read_text())
+        listener = subprocess.run(["/usr/sbin/lsof", "-nP", "-iTCP:" + str(self.port), "-sTCP:LISTEN"],
+                                  capture_output=True, text=True, timeout=3)
+        self.fail(self.output.read_text() + "\nListener inspection:\n" + listener.stdout + listener.stderr)
 
     def state(self, **changes):
         request = Request(f"http://127.0.0.1:{self.port}/_state",
@@ -133,7 +135,9 @@ class SupervisorTests(unittest.TestCase):
             thread.join()
         released = time.monotonic()
         self.wait(lambda: any(row["event"] == "ready" for row in self.events()))
-        self.assertLess(time.monotonic() - released, 5)
+        # Hosted macOS runners can spend several seconds in process inspection.
+        # Keep this below the old 30-second health-check delay.
+        self.assertLess(time.monotonic() - released, 15)
         self.assertEqual(self.state()["loads"], 1)
 
     def test_foreign_listener_after_spawn_is_not_queried(self):

@@ -33,3 +33,7 @@ Release 由 Xcode 构建和签名，架构为 arm64，使用 Developer ID Applic
 最终 ZIP 在附加票据后生成。使用应用自身的 `--verify-archive` 模式，验证压缩包布局、应用身份、版本、arm64 和 Apple 同团队签名，结果为 `VERIFIED`。产物名为 `MLXGateway-0.3.0-macos-arm64.zip`。
 
 已将同一公证 Release 安装到现有常驻应用位置。安装后 Gateway 和 Whisper 均就绪，FChat 主容器再次上传中文 WAV，得到 HTTP 200 和正确 WebVTT。逐项比对确认两个 LaunchAgent 的全部字段、音频配置、运行与模型目录、Python、监听主机和端口均不变。
+
+## CI 测试环境
+
+首次远端 CI 的协议检查通过，恢复 fixture 在 5 秒启动期限内未达到就绪。将该隔离测试的启动期限改为 15 秒、整体观察期限改为 20 秒，并在失败时输出监听诊断；恢复断言仍低于旧实现的 30 秒检查周期。此调整只影响测试，正式服务的配置、所有权检查和恢复逻辑不变。
