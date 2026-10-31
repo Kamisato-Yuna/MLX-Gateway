@@ -8,11 +8,11 @@
 
 ```json
 {
-  "version": "v0.3.0",
-  "title": "MLX Gateway 0.3.0",
+  "version": "v0.3.1",
+  "title": "MLX Gateway 0.3.1",
   "notes": "更新说明",
-  "download_url": "https://github.com/Kamisato-Yuna/MLX-Gateway/releases/download/v0.3.0/MLXGateway-0.3.0-macos-arm64.zip",
-  "asset_name": "MLXGateway-0.3.0-macos-arm64.zip"
+  "download_url": "https://github.com/Kamisato-Yuna/MLX-Gateway/releases/download/v0.3.1/MLXGateway-0.3.1-macos-arm64.zip",
+  "asset_name": "MLXGateway-0.3.1-macos-arm64.zip"
 }
 ```
 
@@ -85,4 +85,4 @@ helper 退出码 0 表示替换成功且系统接受启动请求，非零表示�
 - 替换失败、启动失败、恢复失败时旧包保留，以及 helper 准备错误。
 
 这些隔离测试不启动 GUI 或模型，不单独证明正式发布、公证票据或实际升级验收。
-0.3.0 的构建和公证记录见 [验证记录](verification-0.3.0.md)。0.2.0 的真实签名公证包另已通过解压后签名、公证票据、Gatekeeper、隔离安装及实际重启，详见 [验证记录](verification-0.2.0.md#发布与自动更新)。
+0.3.1 的构建和公证记录见 [验证记录](verification-0.3.1.md)。0.3.0 的构建和公证记录见 [验证记录](verification-0.3.0.md)。0.2.0 的真实签名公证包另已通过解压后签名、公证票据、Gatekeeper、隔离安装及实际重启，详见 [验证记录](verification-0.2.0.md#发布与自动更新)。

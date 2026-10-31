@@ -253,7 +253,7 @@ print(response.output_text)
 
 本轮图像服务、模型内存限制和仓库清理结果见 [图像接入验证记录](docs/verification-images-2026-10-17.md)。
 
-0.3.0 的构建、公证和发布结果见 [版本验证记录](docs/verification-0.3.0.md)。
+0.3.1 的构建、公证和发布结果见 [版本验证记录](docs/verification-0.3.1.md)。0.3.0 的记录仍见 [版本验证记录](docs/verification-0.3.0.md)。
 
 0.2.0 的界面、协议、更新与发布验证见 [版本验证记录](docs/verification-0.2.0.md)；早期版本记录见 [验证记录](docs/verification.md)。
 
