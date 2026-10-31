@@ -187,6 +187,71 @@ let empty = temporary.appendingPathComponent("empty")
 try FileManager.default.createDirectory(at: empty, withIntermediateDirectories: true)
 check(ModelRegistry(modelsRoot: empty.path).defaultModel == nil, "empty registry never indexes a missing model")
 check(!String(describing: scanned.models.map(\.publicDescription)).contains(collection.path), "scan paths stay out of the public model list")
+check(scanned.models.allSatisfy { $0.contextLength == nil && $0.publicDescription["context_length"] == nil }, "scan without a limits file does not invent a context window")
+let limitsFile = temporary.appendingPathComponent("context-limits.json")
+try Data(#"{"limits":[{"model":"team-a/text","context_length":8192},{"model":"missing","context_length":8},{"model":"vision","context_length":16384}]}"#.utf8).write(to: limitsFile)
+let limitedScan = ModelRegistry(modelsRoot: collection.path, contextLimitsURL: limitsFile)
+check(limitedScan.model(id: "team-a/text")?.contextLength == 8192, "apply configured context limit by model id")
+check(limitedScan.model(id: "team-b/text")?.contextLength == nil, "models absent from the limits file stay unlimited")
+check(limitedScan.model(id: "vision")?.contextLength == 16384, "a vision model can declare its own window")
+let listed = limitedScan.model(id: "team-a/text")!.publicDescription
+check(listed["context_length"] as? Int == 8192, "public model list declares context_length")
+check(listed["max_position_embeddings"] == nil && listed["max_model_len"] == nil && listed["max_input_tokens"] == nil, "architecture window is not advertised as usable context")
+check((listed["limitations"] as? [String])?.contains { $0.contains("8192") } == true, "limitation text states the usable window")
+check(limitedScan.model(id: "team-a/text")?.subtitle.contains("8192") == true, "sidebar states the usable window")
+check(!String(describing: listed).contains(limitsFile.path), "limit file path stays out of the public model list")
+check(limitedScan.scanMessage?.contains("无效") == true, "invalid limit rows are reported")
+let badLimits = temporary.appendingPathComponent("bad-limits.json")
+try Data("[]".utf8).write(to: badLimits)
+let badScan = ModelRegistry(modelsRoot: collection.path, contextLimitsURL: badLimits)
+check(badScan.models.count == 3 && badScan.model(id: "team-a/text")?.contextLength == nil, "malformed limits file does not drop models")
+check(badScan.scanMessage?.contains("context-limits") == true, "malformed limits file is reported")
+let missingLimits = ModelRegistry(modelsRoot: collection.path, contextLimitsURL: temporary.appendingPathComponent("nope.json"))
+check(missingLimits.models.count == 3 && missingLimits.model(id: "team-a/text")?.contextLength == nil, "missing limits file leaves models unlimited")
+check(ContextLimitStore.digitsOnly("12a3 你好-4.5") == "12345", "limit fields keep only ASCII digits")
+check(ContextLimitStore.parse("  ", minimum: ContextLimitStore.inputMinimum) == .unlimited && ContextLimitStore.parse("4096", minimum: ContextLimitStore.inputMinimum) == .limited(4096), "blank means unlimited and a custom window is accepted")
+check(ContextLimitStore.parse("8", minimum: ContextLimitStore.inputMinimum) == .invalid && ContextLimitStore.parse("0", minimum: ContextLimitStore.outputMinimum) == .invalid, "reject a window outside its range")
+try ContextLimitStore.save(drafts: ["team-a/text": .init(input: "4096", output: "256"), "vision": .init()], to: limitsFile)
+let savedText = try String(contentsOf: limitsFile, encoding: .utf8)
+check(!savedText.contains(limitsFile.path) && savedText.contains("4096") && savedText.contains("256"), "saved limits contain separate input and output caps and no filesystem path")
+let editedScan = ModelRegistry(modelsRoot: collection.path, contextLimitsURL: limitsFile)
+check(editedScan.model(id: "team-a/text")?.contextLength == 4096 && editedScan.model(id: "team-a/text")?.maxOutputTokens == 256, "saving sets input and output independently")
+check(editedScan.model(id: "vision")?.contextLength == nil && editedScan.model(id: "vision")?.maxOutputTokens == nil, "blank drafts clear both sides")
+let beforeInvalid = savedText
+var invalidRejected = false
+do { try ContextLimitStore.save(drafts: ["team-a/text": .init(input: "3", output: "16")], to: limitsFile) }
+catch { invalidRejected = true }
+let afterInvalid = try String(contentsOf: limitsFile, encoding: .utf8)
+check(invalidRejected && afterInvalid == beforeInvalid, "invalid draft leaves the saved limits unchanged")
+let limitedModel = ModelSpec(id: modelID, backend: .mlxLM, capabilities: ["responses", "text"], localPath: collection.path, contextLength: 32)
+do {
+    _ = try ResponsesAdapter.prepare(["model": modelID, "input": String(repeating: "测", count: 40), "max_output_tokens": 16], model: limitedModel)
+    check(false, "reject input over declared context_length")
+} catch let error as ResponsesAdapter.InvalidRequest {
+    let err = (JSONSupport.object(from: error.response.body)?["error"] as? [String: Any]) ?? [:]
+    check(error.response.statusCode == 400 && err["code"] as? String == "context_length_exceeded", "context limit error names the window")
+    check((err["message"] as? String)?.contains("32") == true, "context limit error states the declared length")
+}
+check((try? ResponsesAdapter.prepare(["model": modelID, "input": "你好", "max_output_tokens": 8], model: limitedModel)) != nil, "short input fits the declared window")
+let outputCapped = ModelSpec(id: modelID, backend: .mlxLM, capabilities: ["responses", "text"], localPath: collection.path, contextLength: 32, maxOutputTokens: 8)
+do {
+    _ = try ResponsesAdapter.prepare(["model": modelID, "input": "你好", "max_output_tokens": 16], model: outputCapped)
+    check(false, "reject explicit output over the output cap")
+} catch let error as ResponsesAdapter.InvalidRequest {
+    let err = (JSONSupport.object(from: error.response.body)?["error"] as? [String: Any]) ?? [:]
+    check(error.response.statusCode == 400 && err["code"] as? String == "max_output_tokens_exceeded", "output cap error is separate from the input cap")
+}
+let clamped = try ResponsesAdapter.prepare(["model": modelID, "input": "你好"], model: outputCapped)
+check(clamped.chat["max_tokens"] as? Int == 8, "omitted output is clamped to the output cap")
+check((try? ResponsesAdapter.prepare(["model": modelID, "input": String(repeating: "测", count: 40)], model: nil)) != nil, "models without a declared limit are not rejected by the window check")
+check(ResponsesAdapter.estimateTokens(String(repeating: "测", count: 4)) == 4, "CJK characters count as one token each")
+check(ResponsesAdapter.estimateTokens("abcd") == 1, "other text uses four UTF-8 bytes per token")
+let dirtyLaunch = LocalProcessEnvironment.sanitized([
+    "PYTHONPATH": "/Applications/Hermes Agent.app/python3.14/site-packages",
+    "PYTHONHOME": "/tmp/other-python", "PATH": "/usr/bin"
+], extra: ["PYTHONUNBUFFERED": "1", "HF_HUB_OFFLINE": "1"])
+check(dirtyLaunch["PYTHONPATH"] == nil && dirtyLaunch["PYTHONHOME"] == nil, "spawn drops a foreign Python path")
+check(dirtyLaunch["PATH"] == "/usr/bin" && dirtyLaunch["PYTHONUNBUFFERED"] == "1" && dirtyLaunch["HF_HUB_OFFLINE"] == "1", "spawn keeps the rest and sets MLX flags")
 let customPaths = RuntimePaths(directory: " ~/custom-mlx ")
 check(customPaths.python.hasSuffix("/custom-mlx/.venv/bin/python") && customPaths.models.hasSuffix("/custom-mlx/models"), "runtime selection derives model and interpreter paths")
 check(RuntimePaths(directory: "~/custom-mlx", models: "/tmp/models", python: "/tmp/python").python == "/tmp/python", "independent interpreter override")

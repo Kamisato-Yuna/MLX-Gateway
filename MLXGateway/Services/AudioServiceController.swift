@@ -166,6 +166,7 @@ final class AudioServiceController: ObservableObject {
         child.executableURL = URL(fileURLWithPath: script)
         child.currentDirectoryURL = URL(fileURLWithPath: runtimeDirectory)
         child.standardOutput = handle; child.standardError = handle; child.standardInput = FileHandle.nullDevice
+        child.environment = LocalProcessEnvironment.sanitized(ProcessInfo.processInfo.environment)
         child.terminationHandler = { [weak self] child in
             Task { @MainActor in
                 guard let self, self.process === child else { return }

@@ -260,7 +260,51 @@ enum ResponsesAdapter {
             }
         }
         if stream { chat["stream_options"] = ["include_usage": true] }
+        if let outputCap = model?.maxOutputTokens {
+            let requested = present(body["max_output_tokens"])
+            let output = (chat["max_tokens"] as? NSNumber)?.intValue ?? 512
+            if requested, output > outputCap {
+                throw InvalidRequest(response: .error(statusCode: 400, message: "max_output_tokens \(output) exceeds the output cap \(outputCap).", code: "max_output_tokens_exceeded"))
+            }
+            chat["max_tokens"] = min(output, outputCap)
+            normalized["max_output_tokens"] = chat["max_tokens"]
+        }
+        if let inputCap = model?.contextLength {
+            let input = Self.estimateContext(messages: chat["messages"] as? [[String: Any]] ?? messages, extra: chat["tools"])
+            if input > inputCap {
+                throw InvalidRequest(response: .error(statusCode: 400, message: "Estimated input of \(input) tokens exceeds the input cap context_length \(inputCap).", code: "context_length_exceeded"))
+            }
+        }
         return Prepared(request: normalized, chat: chat, inputItems: canonical)
+    }
+
+    static func estimateTokens(_ text: String) -> Int {
+        if text.isEmpty { return 0 }
+        var dense = 0
+        var other = ""
+        other.reserveCapacity(text.utf16.count)
+        for scalar in text.unicodeScalars {
+            let value = scalar.value
+            let cjk = (0x1100...0x11FF).contains(value) || (0x2E80...0x9FFF).contains(value)
+                || (0xA960...0xA97F).contains(value) || (0xAC00...0xD7AF).contains(value)
+                || (0xF900...0xFAFF).contains(value) || (0xFF00...0xFFEF).contains(value)
+            if cjk { dense += 1 } else { other.unicodeScalars.append(scalar) }
+        }
+        return dense + (other.utf8.count + 3) / 4
+    }
+
+    /// Rough window check only. CJK counts as one token; other text uses UTF-8 bytes / 4.
+    static func estimateContext(messages: [[String: Any]], extra: Any? = nil) -> Int {
+        messages.reduce(0) { $0 + estimateValue($1) } + estimateValue(extra)
+    }
+
+    private static func estimateValue(_ value: Any?) -> Int {
+        switch value {
+        case let text as String: return estimateTokens(text)
+        case let items as [Any]: return items.reduce(0) { $0 + estimateValue($1) }
+        case let object as [String: Any]: return object.values.reduce(0) { $0 + estimateValue($1) }
+        default: return 0
+        }
     }
 
     private static func content(_ value: Any?, role: String, vision: Bool) throws -> Any {

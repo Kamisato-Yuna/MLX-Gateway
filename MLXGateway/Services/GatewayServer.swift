@@ -264,6 +264,7 @@ final class GatewayServer: @unchecked Sendable {
         "storage": "process_memory", "stored_response_ttl_seconds": 86_400, "background_ephemeral_ttl_seconds": 600,
         "max_retained_responses": ResponsesStore.capacity, "eviction": "oldest finished response when capacity is reached",
         "max_request_bytes": 16 * 1024 * 1024, "max_output_bytes": 8 * 1024 * 1024,
+        "context_length": "When present on a model, context_length is the input-token cap only. max_output_tokens on a model is a separate output cap. Architecture max_position_embeddings is not published.",
         "usage_details": "Missing MLX cached/cache-write/reasoning counts use compatibility zero; these defaults are not measured counts.",
         "background": true, "cancel": "background responses; foreground disconnect cancels transport",
         "stream_resume": "background responses created with stream=true; sequence_number cursor",

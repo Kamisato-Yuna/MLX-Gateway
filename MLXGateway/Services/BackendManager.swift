@@ -1,6 +1,17 @@
 import Foundation
 import Darwin
 
+/// The selected interpreter must not inherit another app's Python path.
+/// A launcher such as Hermes can inject PYTHONPATH for its own interpreter.
+enum LocalProcessEnvironment {
+    static func sanitized(_ environment: [String: String], extra: [String: String] = [:]) -> [String: String] {
+        var next = environment
+        for key in ["PYTHONPATH", "PYTHONHOME"] { next.removeValue(forKey: key) }
+        for (key, value) in extra { next[key] = value }
+        return next
+    }
+}
+
 struct BackendStatus: Equatable, Sendable {
     enum State: String, Sendable { case stopped, starting, ready, stopping, failed }
     var state: State = .stopped
@@ -84,9 +95,8 @@ final class BackendManager: @unchecked Sendable {
                 let child = Process()
                 child.executableURL = URL(fileURLWithPath: pythonExecutable)
                 child.arguments = ["-u", "-m", model.backend.moduleName, "--host", host, "--port", String(port), "--model", model.localPath]
-                var environment = ProcessInfo.processInfo.environment
-                environment["PYTHONUNBUFFERED"] = "1"
-                environment["HF_HUB_OFFLINE"] = "1"
+                let environment = LocalProcessEnvironment.sanitized(ProcessInfo.processInfo.environment, extra: [
+                    "PYTHONUNBUFFERED": "1", "HF_HUB_OFFLINE": "1"])
                 child.environment = environment
                 child.standardInput = FileHandle.nullDevice
                 child.standardOutput = handle

@@ -179,7 +179,9 @@ final class GatewayController: ObservableObject {
         scanningModels = true
         let paths = appliedPaths
         Task {
-            let result = await Task.detached(priority: .userInitiated) { ModelRegistry(modelsRoot: paths.models) }.value
+            let result = await Task.detached(priority: .userInitiated) {
+                ModelRegistry(modelsRoot: paths.models, contextLimitsURL: ModelRegistry.contextLimitsURL(runtimeDirectory: paths.directory))
+            }.value
             registry = result
             server.updateRegistry(result)
             if !audioSelected && !imageSelected && !result.models.contains(where: { $0.id == selectedModelID }) { selectedModelID = result.defaultModel?.id }
@@ -265,6 +267,31 @@ final class GatewayController: ObservableObject {
             refreshModels()
             return true
         } catch { settingsError = error.localizedDescription; return false }
+    }
+
+    /// Writes the runtime context-limit file and reloads the model list. Does not restart a running model.
+    func applyContextLimits(_ drafts: [String: ContextLimitStore.Fields]) -> String? {
+        do {
+            try ContextLimitStore.save(drafts: drafts, to: ModelRegistry.contextLimitsURL(runtimeDirectory: appliedPaths.directory))
+        } catch ContextLimitStore.SaveError.invalidOutput {
+            return "输出限制需为 \(ContextLimitStore.outputMinimum)–\(ContextLimitStore.maximum) 的整数，或留空表示不限制。"
+        } catch {
+            return "输入限制需为 \(ContextLimitStore.inputMinimum)–\(ContextLimitStore.maximum) 的整数，或留空表示不限制。"
+        }
+        reloadModelList()
+        return nil
+    }
+
+    private func reloadModelList() {
+        let paths = appliedPaths
+        Task {
+            let result = await Task.detached(priority: .userInitiated) {
+                ModelRegistry(modelsRoot: paths.models, contextLimitsURL: ModelRegistry.contextLimitsURL(runtimeDirectory: paths.directory))
+            }.value
+            registry = result
+            server.updateRegistry(result)
+            scanSummary = result.scanMessage ?? (result.models.isEmpty ? "目录中没有找到模型，请检查模型目录。" : "已扫描到 \(result.models.count) 个本地模型")
+        }
     }
 
     func restoreSettings() {

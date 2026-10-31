@@ -31,6 +31,7 @@ Default gateway: `http://127.0.0.1:44110/v1`. Default internal MLX port: `44100`
 - `POST /v1/images/generations`: optional synchronous PNG generation through a configured `mlx-serve` service; only `n=1` and `response_format="b64_json"`. Select the image service in the sidebar and start it first. Image edits, image streaming and Responses `image_generation` are not supported
 - Strict function schemas, audio, cloud-hosted tools, uploaded file IDs/URLs and unimplemented parameters return explicit errors
 - Capabilities depend on the installed backend and model. Stored responses are local to the gateway process and disappear after restart; `previous_response_id` does not inherit previous instructions
+- Input and output caps are optional and separate. Put `text-service/context-limits.json` in the runtime directory with `{"limits":[{"model":"<model id>","max_input_tokens":8192,"max_output_tokens":512}]}`. `GET /v1/models` publishes the input cap as `context_length` and the output cap as `max_output_tokens`. Oversized estimated input returns `context_length_exceeded`. An explicit output above the cap returns `max_output_tokens_exceeded`. An omitted output value is clamped to the cap. The architecture window is not published. Unlisted models are unchanged.
 
 ```python
 from openai import OpenAI

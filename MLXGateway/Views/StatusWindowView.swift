@@ -9,6 +9,10 @@ struct StatusWindowView: View {
     @ObservedObject var controller: GatewayController
     @ObservedObject var updater: AppUpdateController
     @Binding var panel: GatewayPanel
+    @State private var inputDraft = ""
+    @State private var outputDraft = ""
+    @State private var contextError: String?
+    @State private var settingsDrafts: [String: ContextLimitStore.Fields] = [:]
 
     var body: some View {
         NavigationSplitView {
@@ -147,6 +151,7 @@ struct StatusWindowView: View {
             }
         .frame(minWidth: 1060, minHeight: 760)
         .sheet(isPresented: $controller.showingSettings, onDismiss: controller.restoreSettings) { settingsSheet }
+            .onChange(of: controller.showingSettings) { _, open in if open { syncSettingsDrafts() } }
     }
 
     private var statusColor: Color {
@@ -177,6 +182,9 @@ struct StatusWindowView: View {
                     }
                 }
                 Spacer(minLength: 0)
+            }
+            if let model = controller.selectedModel {
+                contextEditor(model)
             }
             if let issue = controller.runtimeIssue {
                 HStack {
@@ -221,6 +229,46 @@ struct StatusWindowView: View {
                 }
             }
         }.padding(24)
+        .onChange(of: controller.selectedModel?.id) { _, _ in syncContextDraft() }
+        .onChange(of: controller.selectedModel?.contextLength) { _, _ in syncContextDraft() }
+        .onAppear { syncContextDraft() }
+    }
+
+    private func syncContextDraft() {
+        inputDraft = controller.selectedModel?.contextLength.map(String.init) ?? ""
+        outputDraft = controller.selectedModel?.maxOutputTokens.map(String.init) ?? ""
+        contextError = nil
+    }
+
+    private func syncSettingsDrafts() {
+        settingsDrafts = Dictionary(uniqueKeysWithValues: controller.registry.models.map {
+            ($0.id, ContextLimitStore.Fields(input: $0.contextLength.map(String.init) ?? "", output: $0.maxOutputTokens.map(String.init) ?? ""))
+        })
+    }
+
+    private func digitField(_ title: String, text: Binding<String>) -> some View {
+        TextField(title, text: Binding(get: { text.wrappedValue }, set: { text.wrappedValue = ContextLimitStore.digitsOnly($0) }))
+            .textFieldStyle(.roundedBorder)
+            .frame(maxWidth: 110)
+    }
+
+    private func contextEditor(_ model: ModelSpec) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text("输入限制").font(.callout)
+                digitField("不限制", text: $inputDraft)
+                Text("输出限制").font(.callout)
+                digitField("不限制", text: $outputDraft)
+                Button("应用") {
+                    contextError = controller.applyContextLimits([model.id: .init(input: inputDraft, output: outputDraft)])
+                }
+                .buttonStyle(.glass)
+            }
+            Text("只接受数字。留空表示这一侧不限制。输入和输出分开计算。").font(.caption).foregroundStyle(.secondary)
+            if let contextError {
+                Text(contextError).font(.caption).foregroundStyle(.red)
+            }
+        }
     }
 
     private func copyButton(_ title: String, value: String) -> some View {
@@ -248,6 +296,34 @@ struct StatusWindowView: View {
                     .font(.callout).foregroundStyle(.secondary)
             }
             Form {
+                Section {
+                    if controller.registry.models.isEmpty {
+                        Text("扫描到模型后，可为每个模型填写可用上下文。").foregroundStyle(.secondary)
+                    }
+                    ForEach(controller.registry.models) { model in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(model.id).font(.callout).lineLimit(1).truncationMode(.middle)
+                            HStack {
+                                Text("输入").frame(width: 36, alignment: .leading)
+                                digitField("不限制", text: Binding(
+                                    get: { settingsDrafts[model.id]?.input ?? "" },
+                                    set: { var fields = settingsDrafts[model.id] ?? .init(); fields.input = $0; settingsDrafts[model.id] = fields }
+                                ))
+                                Text("输出").frame(width: 36, alignment: .leading)
+                                digitField("不限制", text: Binding(
+                                    get: { settingsDrafts[model.id]?.output ?? "" },
+                                    set: { var fields = settingsDrafts[model.id] ?? .init(); fields.output = $0; settingsDrafts[model.id] = fields }
+                                ))
+                            }
+                        }
+                    }
+                    Button("应用上下文限制") {
+                        controller.settingsError = controller.applyContextLimits(settingsDrafts)
+                        if controller.settingsError == nil { syncSettingsDrafts() }
+                    }
+                } header: { Text("输入与输出限制") } footer: {
+                    Text("只接受数字。留空表示这一侧不限制。输入至少 \(ContextLimitStore.inputMinimum)，输出至少 \(ContextLimitStore.outputMinimum)，最大 \(ContextLimitStore.maximum)。两者分开执行，不必停止模型。")
+                }
                 Section {
                     pathField("MLX 运行目录", value: Binding(get: { controller.runtimeDirectory }, set: controller.useRuntimeDirectory), kind: "runtime")
                     pathField("模型目录", value: $controller.modelsDirectory, kind: "models")

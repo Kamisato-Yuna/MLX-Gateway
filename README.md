@@ -104,6 +104,18 @@ Anthropic `/v1/messages` 和公开 `/v1/chat/completions` 返回 404。Chat Comp
 
 `store=true` 会话保存在本次网关进程内存，重启清空；容量和到期策略由 `/status` 说明。`previous_response_id` 恢复历史输入输出，不继承上一轮 `instructions`。达到输出预算时返回 `incomplete`，并保留实际 usage。
 
+输入限制和输出限制分开填写。位置在设置，以及所选模型的标题下。只接受数字，其它字符不会进入输入框。留空表示这一侧不限制。应用后写入运行目录的 `text-service/context-limits.json`，并立即出现在 `GET /v1/models`。输入范围为 `256` 到 `1048576`。输出范围为 `1` 到 `1048576`。估算输入超出输入限制时返回 HTTP 400，错误码 `context_length_exceeded`。请求显式给出的 `max_output_tokens` 超出输出限制时返回 HTTP 400，错误码 `max_output_tokens_exceeded`。请求省略输出上限时，转发值会被压到输出限制，不会用默认 512 绕过。公共 `context_length` 只表示输入限制。`max_output_tokens` 只表示输出限制。程序不写死具体模型或数字。旧文件里的 `context_length` 仍按输入限制读取。
+
+```json
+{
+  "limits": [
+    {"model": "your-model-id", "max_input_tokens": 8192, "max_output_tokens": 512}
+  ]
+}
+```
+
+上面的文件由界面写入，一般不必手改。手改后点「刷新模型」或重新打开应用即可。模型正在运行时也可以应用上下文限制，不必先停止。
+
 不会读取请求中的任意本机文件路径；内联文件通过 `file_data` 提交。`file_id` / `file_url`、Responses 内音频、云托管工具、未实现参数等明确返回错误，不静默丢弃。模型架构、工具模板与下游版本仍决定是否能实际完成请求；这不是 OpenAI 云服务全部托管能力的替代。
 
 ### 独立图像生成服务

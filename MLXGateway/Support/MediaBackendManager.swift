@@ -86,8 +86,7 @@ final class MediaBackendManager: @unchecked Sendable {
                     args.append(dir)
                 }
                 child.arguments = args
-                var environment = ProcessInfo.processInfo.environment
-                environment["HF_HUB_OFFLINE"] = "1"
+                let environment = LocalProcessEnvironment.sanitized(ProcessInfo.processInfo.environment, extra: ["HF_HUB_OFFLINE": "1"])
                 child.environment = environment
                 child.standardInput = FileHandle.nullDevice
                 child.standardOutput = handle

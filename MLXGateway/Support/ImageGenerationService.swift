@@ -131,7 +131,7 @@ final class ImageGenerationService: @unchecked Sendable {
                     guard let service = self else { return }
                     service.queue.async { service.exited(child) }
                 }
-                child.environment = ProcessInfo.processInfo.environment.merging(["HF_HUB_OFFLINE": "1"]) { _, new in new }
+                child.environment = LocalProcessEnvironment.sanitized(ProcessInfo.processInfo.environment, extra: ["HF_HUB_OFFLINE": "1"])
                 try child.run(); process = child
                 publish(.init(state: .starting, pid: child.processIdentifier, message: "等待指定图像模型加载完成。"))
                 probe(child, deadline: Date().addingTimeInterval(c.readinessTimeout), attemptedLoad: false)
